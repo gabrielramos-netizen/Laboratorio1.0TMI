@@ -1,4 +1,4 @@
-.include "m328pdef.inc"
+.include "m328pbdef.inc"
 
 .def TEMP      = r16
 .def DATO_UART = r17
@@ -6,8 +6,8 @@
 .def DELAY2    = r19
 .def PASOS     = r21
 .def MULT      = r22
-.def ACT_X     = r23      ; Posicion x real del plotter 
-.def ACT_Y     = r24      ; Posicion y real del plotter
+.def ACT_X     = r23      ; Posicion x real del plotter
+.def ACT_Y     = r24      ; Posicion y real del plotter 
 .def DEST_X    = r25      ; Coordenada x a donde ir
 .def DEST_Y    = r20      ; Coordenada y a donde ir
 
@@ -36,7 +36,7 @@ INICIO:
     clr TEMP
     out PORTD, TEMP      
 
-    ;=====CONFIGURACIÓN DE USART=====;
+    ;=====CONFIGURACIÃ“N DE USART=====;
     ldi TEMP, 0x00
     sts UBRR0H, TEMP
     ldi TEMP, 103      
@@ -170,3 +170,135 @@ EJECUTAR_TRAZO:
     rcall PASAR_PUNTOS   
     ret
 
+;=====COORDENADAS =====
+PASAR_PUNTOS:
+SIG_NODO:
+    lpm DEST_X, Z+
+    lpm DEST_Y, Z+
+    cpi DEST_X, 255
+    brne PP_MOVER
+    cpi DEST_Y, 255
+    breq FIN_DIBUJO
+
+PP_MOVER:
+    rcall IR_A_DESTINO
+    rjmp SIG_NODO
+
+FIN_DIBUJO:
+    rcall SUBIR
+    ret
+
+IR_A_DESTINO:
+CHEQUEAR_EJES:
+    cp ACT_X, DEST_X
+    breq CHK_SOLO_Y
+    brlo CHK_X_MENOR
+
+CHK_X_MAYOR:
+    cp ACT_Y, DEST_Y
+    breq CHK_X_MAYOR_Y_IGUAL
+    brlo CHK_X_MAYOR_Y_MENOR
+    
+    ldi MULT, ESCALA
+L_ESC1: 
+    rcall UP_DER
+    dec MULT 
+    brne L_ESC1
+    dec ACT_X
+    dec ACT_Y
+    rjmp CHEQUEAR_EJES
+
+CHK_X_MAYOR_Y_MENOR:
+    ldi MULT, ESCALA
+L_ESC2: 
+    rcall DOWN_DER 
+    dec MULT 
+    brne L_ESC2
+    dec ACT_X
+    inc ACT_Y
+    rjmp CHEQUEAR_EJES
+
+CHK_X_MAYOR_Y_IGUAL:
+    ldi MULT, ESCALA
+L_ESC3: 
+    rcall DER 
+    dec MULT 
+    brne L_ESC3
+    dec ACT_X
+    rjmp CHEQUEAR_EJES
+
+CHK_X_MENOR:
+    cp ACT_Y, DEST_Y
+    breq CHK_X_MENOR_Y_IGUAL
+    brlo CHK_X_MENOR_Y_MENOR
+
+    ldi MULT, ESCALA
+L_ESC4: 
+    rcall UP_IZQ 
+    dec MULT 
+    brne L_ESC4
+    inc ACT_X
+    dec ACT_Y
+    rjmp CHEQUEAR_EJES
+
+CHK_X_MENOR_Y_MENOR:
+    ldi MULT, ESCALA
+L_ESC5: 
+    rcall DOWN_IZQ 
+    dec MULT 
+    brne L_ESC5
+    inc ACT_X
+    inc ACT_Y
+    rjmp CHEQUEAR_EJES
+
+CHK_X_MENOR_Y_IGUAL:
+    ldi MULT, ESCALA
+L_ESC6: 
+    rcall IZQ 
+    dec MULT 
+    brne L_ESC6
+    inc ACT_X
+    rjmp CHEQUEAR_EJES
+
+CHK_SOLO_Y:
+    cp ACT_Y, DEST_Y
+    breq IR_A_DESTINO_FIN
+    brlo CHK_Y_MENOR
+
+    ldi MULT, ESCALA
+L_ESC7: 
+    rcall ARRIBA_REAL   
+    dec MULT 
+    brne L_ESC7
+    dec ACT_Y
+    rjmp CHK_SOLO_Y
+
+CHK_Y_MENOR:
+    ldi MULT, ESCALA
+L_ESC8: 
+    rcall DOWN 
+    dec MULT 
+    brne L_ESC8
+    inc ACT_Y
+    rjmp CHK_SOLO_Y
+
+IR_A_DESTINO_FIN:
+    ret
+
+;===== HOMING Fisico=====
+HOMING:
+    ldi PASOS, PASOS_HOMING
+HOMING_DER:
+    rcall DER            
+    dec PASOS
+    brne HOMING_DER
+
+    ldi PASOS, PASOS_HOMING
+HOMING_UP:
+    rcall ARRIBA_REAL  
+    dec PASOS
+    brne HOMING_UP
+
+    clr ACT_X          
+    clr ACT_Y
+    ret
