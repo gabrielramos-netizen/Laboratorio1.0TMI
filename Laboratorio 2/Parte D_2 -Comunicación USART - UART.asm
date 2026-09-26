@@ -38,6 +38,35 @@ inicio:
 loop:
     rcall recibir
     andi r16, 0x07
+
+    ; decodificador de 3 a 8
+    ldi r17, 1
+    mov r18, r16
+
+    tst r18
+    breq mostrar
+
+rotar:
+    lsl r17
+    dec r18
+    brne rotar
+
+mostrar:
+    ; manda leds 0 a 5 al puerto B
+    mov r19, r17
+    andi r19, 0x3F
+    out PORTB, r19
+
+    ; manda leds 6 a 7 al puerto C
+    mov r19, r17
+    lsr r19
+    lsr r19
+    lsr r19
+    lsr r19
+    lsr r19
+    lsr r19
+    out PORTC, r19
+
     rjmp loop
 
 recibir:
