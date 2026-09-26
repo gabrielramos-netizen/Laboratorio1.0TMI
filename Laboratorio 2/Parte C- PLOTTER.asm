@@ -1,304 +1,681 @@
 .include "m328pbdef.inc"
 
-.def TEMP      = r16
-.def DATO_UART = r17
-.def DELAY1    = r18
-.def DELAY2    = r19
-.def PASOS     = r21
-.def MULT      = r22
-.def ACT_X     = r23      ; Posicion x real del plotter
-.def ACT_Y     = r24      ; Posicion y real del plotter 
-.def DEST_X    = r25      ; Coordenada x a donde ir
-.def DEST_Y    = r20      ; Coordenada y a donde ir
+; ===== DEFINICIÓN DE REGISTROS =====
+.def TEMP        = r16
+.def DATO_UART   = r17
+.def DELAY1      = r18
+.def DELAY2      = r19
+.def ZONA_ACTUAL = r20   ; Contador de zona A4 (1 a 5)
+.def PASOS       = r21
+.def Y_POS       = r23   ; Registro para coordenada Y
+.def REG_DELAY3  = r25   ; Registro auxiliar para la pausa de 1s
 
-.equ SOL_BAJAR  = (1<<2)   ; D2 -> X0 (Bajar solenoide)
-.equ SOL_SUBIR  = (1<<3)   ; D3 -> X1 (Subir solenoide)
-.equ MOV_ABAJO  = (1<<4)   ; D4 -> X5 (Mover abajo)
-.equ MOV_ARRIBA = (1<<5)   ; D5 -> X6 (Mover arriba)
-.equ MOV_IZQ    = (1<<6)   ; D6 -> X7 (Mover izquierda)
-.equ MOV_DER    = (1<<7)   ; D7 -> X10 (Mover derecha)
+; ===== CONFIGURACIÓN Y CONSTANTES =====
+.equ PASOS_POR_PIXEL = 10  ; Ajusta la escala del píxel
+.equ PASOS_POR_MM    = 5   ; Pasos del motor por cada milímetro
 
-.equ PASOS_HOMING = 255    
-.equ SEPARACION   = 60     
-.equ ESCALA       = 4      
+.equ Z1_X = 45  
+.equ Z1_Y = 45
+
+.equ Z2_X = 145 
+.equ Z2_Y = 45
+
+.equ Z3_X = 245 
+.equ Z3_Y = 45
+
+.equ Z4_X = 95  
+.equ Z4_Y = 135
+
+.equ Z5_X = 195 
+.equ Z5_Y = 135
+
+; ===== PINES (PORTD) =====
+.equ SOL_BAJAR  = (1<<2)   
+.equ SOL_SUBIR  = (1<<3)   
+.equ MOV_ABAJO  = (1<<4)   
+.equ MOV_ARRIBA = (1<<5)   
+.equ MOV_IZQ    = (1<<6)   
+.equ MOV_DER    = (1<<7)   
+
+
+; ===== MACROS DE DIBUJO =====
+
+.macro IZQ
+    ldi r22, @0
+    rcall MOTO_IZQ_N
+.endmacro
+
+.macro DER
+    ldi r22, @0
+    rcall MOTO_DER_N
+.endmacro
+
+.macro ARR
+    ldi r22, @0
+    rcall MOTO_ARR_N
+.endmacro
+
+.macro ABJ
+    ldi r22, @0
+    rcall MOTO_ABJ_N
+.endmacro
+
+.macro DIAG_AD
+    ldi r22, @0
+    rcall MOTO_DIAG_AD_N
+.endmacro
+
+.macro DIAG_AI
+    ldi r22, @0
+    rcall MOTO_DIAG_AI_N
+.endmacro
+
+.macro DIAG_BD
+    ldi r22, @0
+    rcall MOTO_DIAG_BD_N
+.endmacro
+
+.macro DIAG_BI
+    ldi r22, @0
+    rcall MOTO_DIAG_BI_N
+.endmacro
+
+.macro LEVANTAR_LAPIZ
+    rcall SUBIR
+.endmacro
+
+.macro BAJAR_LAPIZ
+    rcall BAJAR
+.endmacro
+
+.macro ESPERAR_1S
+    rcall DELAY_1SEG
+.endmacro
+
+
+; ===== INICIO =====
 
 .org 0x0000
     rjmp INICIO
 
 INICIO:
+    ; Stack Pointer
     ldi TEMP, HIGH(RAMEND)
     out SPH, TEMP
     ldi TEMP, LOW(RAMEND)
     out SPL, TEMP
 
+    ; Puerto D como Salida
     ldi TEMP, 0xFC        
     out DDRD, TEMP
     clr TEMP
-    out PORTD, TEMP      
+    out PORTD, TEMP       
 
-    ;=====CONFIGURACIÓN DE USART=====;
+    ; Configuración USART 
     ldi TEMP, 0x00
     sts UBRR0H, TEMP
-    ldi TEMP, 103      
+    ldi TEMP, 103         
     sts UBRR0L, TEMP
 
-    ldi TEMP, (1<<RXEN0) | (1<<TXEN0)
+    ldi TEMP, (1<<RXEN0) | (1<<TXEN0)  ; Habilitar RX y TX
     sts UCSR0B, TEMP
 
-    ldi TEMP, (1<<UCSZ01) | (1<<UCSZ00)
+    ldi TEMP, (1<<UCSZ01) | (1<<UCSZ00) ; 8 bits de datos, 1 bit de parada
     sts UCSR0C, TEMP
 
-    rcall HOMING         
+    ; Inicializar Zonas y Homing
+    ldi ZONA_ACTUAL, 1     
+    rcall HOMING
+
+    ; Transmitir Interfaz por Serial al iniciar
+    rcall MOSTRAR_MENU_SERIAL
 
     rjmp MAIN_LOOP         
 
+
+; ===== COMUNICACIÓN SERIAL (UART) =====
+
 UART_RECIBIR:
     lds TEMP, UCSR0A
-    sbrs TEMP, RXC0      
+    sbrs TEMP, RXC0       
     rjmp UART_RECIBIR     
     lds DATO_UART, UDR0  
     ret
 
+UART_TRANSMITIR:
+    lds r24, UCSR0A
+    sbrs r24, UDRE0       
+    rjmp UART_TRANSMITIR
+    sts UDR0, TEMP
+    ret
+
+MOSTRAR_MENU_SERIAL:
+    ldi ZL, LOW(TEXTO_MENU * 2)
+    ldi ZH, HIGH(TEXTO_MENU * 2)
+L_ENVIAR_TXT:
+    lpm TEMP, Z+
+    tst TEMP
+    breq FIN_ENVIAR_TXT
+    rcall UART_TRANSMITIR
+    rjmp L_ENVIAR_TXT
+FIN_ENVIAR_TXT:
+    ret
+
+
+; ===== MENÚ UART =====
+
 MAIN_LOOP:
     rcall UART_RECIBIR    
 
-    cpi DATO_UART, '1'    
-    breq IR_TRIANGULO
-
-    cpi DATO_UART, '2'    
-    breq IR_CIRCULO
-
-    cpi DATO_UART, '3' 
-    breq IR_PENTAGRAMA
-
-    cpi DATO_UART, '4'   
-    breq IR_LIBRE
-
-    cpi DATO_UART, 'P'   
-    breq IR_DITTO
+    cpi DATO_UART, '1'
+    breq EXEC_TRIANGULO
+    cpi DATO_UART, '2'
+    breq EXEC_CIRCULO
+    cpi DATO_UART, '3'
+    breq EXEC_PENTAGRAMA
+    cpi DATO_UART, '4'
+    breq EXEC_LIBRE
+    cpi DATO_UART, '5'
+    breq EXEC_DITTO
     cpi DATO_UART, 'p'
-    breq IR_DITTO
+    breq EXEC_DITTO
+    cpi DATO_UART, 'P'
+    breq EXEC_DITTO
 
-    cpi DATO_UART, 'T'  
-    breq IR_TODAS
+    ; Opciones para todas las figuras
     cpi DATO_UART, 't'
-    breq IR_TODAS
+    breq EXEC_TODAS
+    cpi DATO_UART, 'T'
+    breq EXEC_TODAS
 
-    rjmp MAIN_LOOP        
+    ; Resetear Zonas e Interfaz
+    cpi DATO_UART, 'r'
+    breq RESET_ZONAS
+    cpi DATO_UART, 'R'
+    breq RESET_ZONAS
 
-IR_TRIANGULO:   
-    rcall D_TRIANGULO  
-    rjmp MAIN_LOOP
-IR_CIRCULO:     
-    rcall D_CIRCULO    
-    rjmp MAIN_LOOP
-IR_PENTAGRAMA:  
-    rcall D_PENTAGRAMA 
-    rjmp MAIN_LOOP
-IR_LIBRE:       
-    rcall D_FIGURA_LIBRE      
-    rjmp MAIN_LOOP
-IR_DITTO:       
-    rcall D_DITTO      
     rjmp MAIN_LOOP
 
-IR_TODAS:
-  
-    rcall D_TRIANGULO
-    ldi PASOS, SEPARACION
-    rcall MOVER_IZQ_VACIO
-    ldi TEMP, SEPARACION
-    add ACT_X, TEMP
+RESET_ZONAS:
+    ldi ZONA_ACTUAL, 1
+    rcall HOMING
+    rcall MOSTRAR_MENU_SERIAL
+    rjmp MAIN_LOOP
 
-    rcall D_CIRCULO
-    ldi PASOS, SEPARACION
-    rcall MOVER_IZQ_VACIO
-    ldi TEMP, SEPARACION
-    add ACT_X, TEMP
+EXEC_TRIANGULO:   rcall DIBUJAR_TRIANGULO
+                  rjmp MAIN_LOOP
+EXEC_CIRCULO:     rcall DIBUJAR_CIRCULO
+                  rjmp MAIN_LOOP
+EXEC_PENTAGRAMA:  rcall DIBUJAR_PENTAGRAMA
+                  rjmp MAIN_LOOP
+EXEC_LIBRE:       rcall DIBUJAR_LIBRE
+                  rjmp MAIN_LOOP
+EXEC_DITTO:       rcall DIBUJAR_DITTO
+                  rjmp MAIN_LOOP
 
-    rcall D_PENTAGRAMA
-    ldi PASOS, SEPARACION
-    rcall MOVER_IZQ_VACIO
-    ldi TEMP, SEPARACION
-    add ACT_X, TEMP
-
-    rcall D_FIGURA_LIBRE
-    ldi PASOS, SEPARACION
-    rcall MOVER_IZQ_VACIO
-    ldi TEMP, SEPARACION
-    add ACT_X, TEMP
-
-    rcall D_DITTO
+EXEC_TODAS:
+    rcall DIBUJAR_TRIANGULO
+    rcall DIBUJAR_CIRCULO
+    rcall DIBUJAR_PENTAGRAMA
+    rcall DIBUJAR_LIBRE
+    rcall DIBUJAR_DITTO
     rjmp MAIN_LOOP
 
 
-D_TRIANGULO:
-    ldi r27, high(TABLA_TRI*2)
-    ldi r26, low(TABLA_TRI*2)
-    rjmp EJECUTAR_TRAZO
+; ===== TRIÁNGULO RECTÁNGULO =====
 
-D_CIRCULO:
-    ldi r27, high(TABLA_CIRC*2)
-    ldi r26, low(TABLA_CIRC*2)
-    rjmp EJECUTAR_TRAZO
+DIBUJAR_TRIANGULO:
+    rcall IR_A_ZONA_ACTUAL
+    ESPERAR_1S
 
-D_PENTAGRAMA:
-    ldi r27, high(TABLA_PENTA*2)
-    ldi r26, low(TABLA_PENTA*2)
-    rjmp EJECUTAR_TRAZO
+    IZQ 25
+    ABJ 5
 
-D_FIGURA_LIBRE:
-    ldi r27, high(TABLA_LIBRE*2)
-    ldi r26, low(TABLA_LIBRE*2)
-    rjmp EJECUTAR_TRAZO
+    BAJAR_LAPIZ
+    ESPERAR_1S
 
-D_DITTO:
-    ldi r27, high(TABLA_DITTO*2)
-    ldi r26, low(TABLA_DITTO*2)
-    rjmp EJECUTAR_TRAZO
+    DER 20              ; Base
+    ABJ 20              ; Altura
+    DIAG_AI 20          ; Hipotenusa 
 
-EJECUTAR_TRAZO:
-    mov ZH, r27
-    mov ZL, r26
-
-    lpm DEST_X, Z+
-    lpm DEST_Y, Z+
-
-    rcall IR_A_DESTINO     
-
-    rcall BAJAR            
-    rcall PASAR_PUNTOS   
+    LEVANTAR_LAPIZ
+    rcall AVANZAR_ZONA
     ret
 
-;=====COORDENADAS =====
-PASAR_PUNTOS:
-SIG_NODO:
-    lpm DEST_X, Z+
-    lpm DEST_Y, Z+
-    cpi DEST_X, 255
-    brne PP_MOVER
-    cpi DEST_Y, 255
-    breq FIN_DIBUJO
 
-PP_MOVER:
-    rcall IR_A_DESTINO
-    rjmp SIG_NODO
+; ===== CÍRCULO =====
 
-FIN_DIBUJO:
-    rcall SUBIR
+DIBUJAR_CIRCULO:
+    rcall IR_A_ZONA_ACTUAL
+    ESPERAR_1S
+
+    IZQ 15
+    ABJ 10
+
+    BAJAR_LAPIZ
+    ESPERAR_1S
+
+    DER 5
+    ABJ 1
+    DER 4
+    ABJ 1
+    DER 2
+    ABJ 1
+    DER 2
+    ABJ 1
+    DER 1
+    ABJ 1 
+    DER 2
+    ABJ 1
+    DER 1
+    ABJ 1
+    DER 1
+    ABJ 1
+    DER 1
+    ABJ 1
+    DER 1
+    ABJ 2
+    DER 1
+    ABJ 1
+    DER 1
+    ABJ 2
+    DER 1
+    ABJ 2
+    DER 1
+    ABJ 4
+    DER 1
+    ABJ 5
+    ABJ 5
+    IZQ 1
+    ABJ 4
+    IZQ 1
+    ABJ 2
+    IZQ 1
+    ABJ 2
+    IZQ 1
+    ABJ 1
+    IZQ 1
+    ABJ 2
+    IZQ 1
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 2
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 2
+    ABJ 1
+    IZQ 2
+    ABJ 1
+    IZQ 4
+    ABJ 1
+    IZQ 5
+    IZQ 5
+    ARR 1
+    IZQ 4
+    ARR 1
+    IZQ 2
+    ARR 1
+    IZQ 2
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 2
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 1
+    ARR 2
+    IZQ 1
+    ARR 1
+    IZQ 1
+    ARR 2
+    IZQ 1
+    ARR 2
+    IZQ 1
+    ARR 4
+    IZQ 1
+    ARR 5
+    ARR 5
+    DER 1
+    ARR 4
+    DER 1
+    ARR 2
+    DER 1
+    ARR 2
+    DER 1
+    ARR 1
+    DER 1
+    ARR 2
+    DER 1
+    ARR 1
+    DER 1
+    ARR 1
+    DER 1
+    ARR 1
+    DER 1
+    ARR 1
+    DER 2
+    ARR 1
+    DER 1
+    ARR 1
+    DER 2
+    ARR 1
+    DER 2
+    ARR 1
+    DER 2
+    ARR 1
+    DER 5
+
+    LEVANTAR_LAPIZ
+    rcall AVANZAR_ZONA
     ret
 
-IR_A_DESTINO:
-CHEQUEAR_EJES:
-    cp ACT_X, DEST_X
-    breq CHK_SOLO_Y
-    brlo CHK_X_MENOR
 
-CHK_X_MAYOR:
-    cp ACT_Y, DEST_Y
-    breq CHK_X_MAYOR_Y_IGUAL
-    brlo CHK_X_MAYOR_Y_MENOR
-    
-    ldi MULT, ESCALA
-L_ESC1: 
-    rcall UP_DER
-    dec MULT 
-    brne L_ESC1
-    dec ACT_X
-    dec ACT_Y
-    rjmp CHEQUEAR_EJES
+; ===== PENTAGRAMA =====
 
-CHK_X_MAYOR_Y_MENOR:
-    ldi MULT, ESCALA
-L_ESC2: 
-    rcall DOWN_DER 
-    dec MULT 
-    brne L_ESC2
-    dec ACT_X
-    inc ACT_Y
-    rjmp CHEQUEAR_EJES
+DIBUJAR_PENTAGRAMA:
+    rcall IR_A_ZONA_ACTUAL
+    ESPERAR_1S
 
-CHK_X_MAYOR_Y_IGUAL:
-    ldi MULT, ESCALA
-L_ESC3: 
-    rcall DER 
-    dec MULT 
-    brne L_ESC3
-    dec ACT_X
-    rjmp CHEQUEAR_EJES
+    IZQ 20
+    ABJ 3
 
-CHK_X_MENOR:
-    cp ACT_Y, DEST_Y
-    breq CHK_X_MENOR_Y_IGUAL
-    brlo CHK_X_MENOR_Y_MENOR
+    BAJAR_LAPIZ
+    ESPERAR_1S
 
-    ldi MULT, ESCALA
-L_ESC4: 
-    rcall UP_IZQ 
-    dec MULT 
-    brne L_ESC4
-    inc ACT_X
-    dec ACT_Y
-    rjmp CHEQUEAR_EJES
+    DER 1
+    ABJ 2
+    DER 1
+    ABJ 3
+    DER 1
+    ABJ 3
+    DER 1
+    ABJ 4
+    DER 1
+    ABJ 3
+    DER 1
+    ABJ 3
+    DER 1
+    ABJ 3
+    DER 1
+    ABJ 3
+    DER 1
+    ABJ 3
+    DER 1
+    ABJ 4
+    DER 1
+    ABJ 3
+    DER 1
+    ABJ 3
+    DER 1
+    ABJ 2
+    IZQ 1
+    ARR 1
+    IZQ 2
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 2
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 2
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 2
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 2
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 2
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 2
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 2
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 2
+    ARR 1
+    IZQ 1
+    ARR 1
+    DER 5
+    DER 5
+    DER 5
+    DER 5
+    DER 5
+    DER 5
+    DER 5
+    DER 5
+    DER 1
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 2
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 2
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 2
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 2
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 2
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 2
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 2
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 2
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 2
+    ABJ 1
+    IZQ 1
+    ARR 2
+    DER 1
+    ARR 3
+    DER 1
+    ARR 3
+    DER 1
+    ARR 4
+    DER 1
+    ARR 3
+    DER 1
+    ARR 3
+    DER 1
+    ARR 3
+    DER 1
+    ARR 3
+    DER 1
+    ARR 3
+    DER 1
+    ARR 4
+    DER 1
+    ARR 3
+    DER 1
+    ARR 3
+    DER 1
 
-CHK_X_MENOR_Y_MENOR:
-    ldi MULT, ESCALA
-L_ESC5: 
-    rcall DOWN_IZQ 
-    dec MULT 
-    brne L_ESC5
-    inc ACT_X
-    inc ACT_Y
-    rjmp CHEQUEAR_EJES
-
-CHK_X_MENOR_Y_IGUAL:
-    ldi MULT, ESCALA
-L_ESC6: 
-    rcall IZQ 
-    dec MULT 
-    brne L_ESC6
-    inc ACT_X
-    rjmp CHEQUEAR_EJES
-
-CHK_SOLO_Y:
-    cp ACT_Y, DEST_Y
-    breq IR_A_DESTINO_FIN
-    brlo CHK_Y_MENOR
-
-    ldi MULT, ESCALA
-L_ESC7: 
-    rcall ARRIBA_REAL   
-    dec MULT 
-    brne L_ESC7
-    dec ACT_Y
-    rjmp CHK_SOLO_Y
-
-CHK_Y_MENOR:
-    ldi MULT, ESCALA
-L_ESC8: 
-    rcall DOWN 
-    dec MULT 
-    brne L_ESC8
-    inc ACT_Y
-    rjmp CHK_SOLO_Y
-
-IR_A_DESTINO_FIN:
+    LEVANTAR_LAPIZ
+    rcall AVANZAR_ZONA
     ret
 
-;===== HOMING Fisico=====
-HOMING:
-    ldi PASOS, PASOS_HOMING
-HOMING_DER:
-    rcall DER            
-    dec PASOS
-    brne HOMING_DER
 
-    ldi PASOS, PASOS_HOMING
-HOMING_UP:
-    rcall ARRIBA_REAL  
-    dec PASOS
-    brne HOMING_UP
+; =====DIBUJO LIBRE =====
 
-    clr ACT_X          
-    clr ACT_Y
+DIBUJAR_LIBRE:
+    rcall IR_A_ZONA_ACTUAL
+    ESPERAR_1S
+
+    IZQ 12
+    ABJ 2
+
+    BAJAR_LAPIZ
+    ESPERAR_1S
+
+    DER 5 
+    ABJ 2
+    DER 4
+    ABJ 2
+    DER 2
+    ABJ 2
+    DER 2
+    ABJ 4
+    DER 2
+    ABJ 5
+    ABJ 5
+    IZQ 2
+    ABJ 4
+    IZQ 2
+    ABJ 2
+    IZQ 2
+    ABJ 2
+    IZQ 4
+    ABJ 2
+    IZQ 5
+    IZQ 5
+    ARR 2
+    IZQ 4
+    ARR 2
+    IZQ 2
+    ARR 2
+    IZQ 2
+    ARR 4
+    IZQ 2
+    ARR 5
+    ARR 5
+    DER 2
+    ARR 4
+    DER 2
+    ARR 2
+    DER 2
+    ARR 2
+    DER 4
+    ARR 2
+    DER 5
+
+    LEVANTAR_LAPIZ
+    ESPERAR_1S
+
+    ABJ 5
+    ABJ 5
+    IZQ 5
+    IZQ 5
+    IZQ 3
+
+    BAJAR_LAPIZ
+    ESPERAR_1S
+
+    DER 5
+    DER 5
+    DER 5
+    DER 5
+    DER 5
+    DER 3
+
+    LEVANTAR_LAPIZ
+    ESPERAR_1S
+    ABJ 2
+
+    BAJAR_LAPIZ
+    ESPERAR_1S
+
+    IZQ 4
+    ABJ 4
+    IZQ 2
+    ABJ 2
+    IZQ 3
+    IZQ 3
+    ARR 2
+    IZQ 2
+    ARR 2
+    IZQ 2
+    ABJ 2
+    IZQ 2
+    ABJ 2
+    IZQ 3
+    IZQ 3
+    ARR 2
+    IZQ 2
+    ARR 4
+    IZQ 4
+
+    LEVANTAR_LAPIZ
+    ESPERAR_1S
+
+    DER 5
+    DER 3
+    ABJ 3
+    ABJ 5
+
+    BAJAR_LAPIZ
+    ESPERAR_1S
+
+    DER 2
+    ABJ 2
+    DER 3
+    DER 3
+    ABJ 2
+    IZQ 3
+    IZQ 3
+    ARR 2
+    IZQ 2
+    ARR 2
+
+    LEVANTAR_LAPIZ
+    rcall AVANZAR_ZONA
     ret
+
