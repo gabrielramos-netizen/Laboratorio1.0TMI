@@ -1,6 +1,6 @@
 .include "m328pdef.inc"
 
-.equ ubrr = 103 ; 16MHz y 9600 baudios
+.equ ubrr = 103
 
 .org 0x0000
     rjmp inicio
@@ -16,6 +16,7 @@ inicio:
     cbi DDRC, 0
     cbi DDRC, 1
     cbi DDRC, 2
+
     ; pull-ups
     sbi PORTC, 0
     sbi PORTC, 1
@@ -30,8 +31,19 @@ inicio:
     ldi r16, (1<<TXEN0)
     sts UCSR0B, r16
 
-    ldi r16, (1<<UCSZ01)|(1<<UCSZ00) ; 8 bits
+    ldi r16, (1<<UCSZ01)|(1<<UCSZ00)
     sts UCSR0C, r16
 
 loop:
+    in r16, PINC   
+    com r16           
+    andi r16, 0x07    
+    rcall enviar
     rjmp loop
+
+enviar:
+    lds r17, UCSR0A
+    sbrs r17, UDRE0
+    rjmp enviar
+    sts UDR0, r16
+    ret
