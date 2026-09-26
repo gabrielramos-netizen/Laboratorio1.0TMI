@@ -36,4 +36,13 @@ inicio:
     sts UCSR0C, r16
 
 loop:
+    rcall recibir
+    andi r16, 0x07
     rjmp loop
+
+recibir:
+    lds r17, UCSR0A
+    sbrs r17, RXC0
+    rjmp recibir
+    lds r16, UDR0
+    ret
