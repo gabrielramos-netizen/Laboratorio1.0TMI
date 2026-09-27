@@ -1,4 +1,4 @@
-.include "m328pbdef.inc"
+.include "m328pdef.inc"
 
 ; ===== DEFINICIÓN DE REGISTROS =====
 .def TEMP        = r16
