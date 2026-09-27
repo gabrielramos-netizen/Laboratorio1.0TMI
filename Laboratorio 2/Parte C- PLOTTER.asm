@@ -679,3 +679,537 @@ DIBUJAR_LIBRE:
     rcall AVANZAR_ZONA
     ret
 
+
+; =====DITTO=====
+
+DIBUJAR_DITTO:
+    rcall IR_A_ZONA_ACTUAL
+    ESPERAR_1S
+
+    IZQ 18
+    ABJ 3
+
+    BAJAR_LAPIZ
+    ESPERAR_1S
+
+    DER 1
+    ABJ 1
+    DER 2
+    ARR 1
+    DER 4
+    ABJ 1
+    DER 1
+    ABJ 1
+    DER 1
+    ABJ 2
+    DER 1
+    ABJ 1
+    DER 1
+    ABJ 1
+    DER 2
+    ABJ 1
+    DER 1
+    ABJ 1
+    DER 1
+    ABJ 4
+    IZQ 1
+    ABJ 1
+    DER 1
+    ABJ 2
+    DER 1
+    ABJ 2
+    DER 1
+    ABJ 1
+    DER 1
+    ABJ 1
+    DER 1
+    ABJ 4
+    IZQ 1
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 2
+    ABJ 1
+    IZQ 4
+    ARR 1
+    IZQ 3
+    ABJ 1
+    IZQ 1
+    ABJ 1
+    IZQ 2
+    ABJ 1
+    IZQ 5
+    IZQ 4
+    ARR 1
+    IZQ 2
+    ARR 1
+    IZQ 1
+    ARR 1
+    IZQ 3
+    ABJ 1
+    IZQ 3
+    ARR 1
+    IZQ 2
+    ARR 1
+    IZQ 1
+    ARR 2
+    IZQ 1
+    ARR 3
+    DER 1
+    ARR 2
+    DER 1
+    ARR 1
+    DER 1
+    ARR 1
+    DER 1
+    ARR 2
+    DER 1
+    ARR 4
+    IZQ 1
+    ARR 2
+    IZQ 1
+    ARR 3
+    DER 1
+    ARR 1
+    DER 1
+    ARR 1
+    DER 5
+    ARR 1
+    DER 2 
+    ARR 1
+    DER 1
+    ARR 1
+    DER 4
+    ABJ 1
+
+    LEVANTAR_LAPIZ
+
+    ABJ 5
+    ABJ 3
+    DER 2
+    BAJAR_LAPIZ
+    DER 1
+    ABJ 1
+    IZQ 1
+    ARR 1
+    LEVANTAR_LAPIZ 
+
+    IZQ 5
+    IZQ 1
+    BAJAR_LAPIZ
+    IZQ 1
+    ARR 1
+    DER 1
+    ABJ 1
+
+    LEVANTAR_LAPIZ 
+    ABJ 2
+    BAJAR_LAPIZ
+    DER 1
+    ABJ 1
+    DER 1
+    DER 5
+    ABJ 1
+    IZQ 5
+    IZQ 1
+    ARR 1
+    IZQ 1
+    ARR 1
+    LEVANTAR_LAPIZ 
+
+    rcall AVANZAR_ZONA
+    ret
+
+
+; ===== RETARDOS =====
+
+DELAY_1SEG:
+    push r18
+    push r19
+    push REG_DELAY3
+    
+    ldi r18, 106
+L_1S_1:
+    ldi r19, 200
+L_1S_2:
+    ldi REG_DELAY3, 250
+L_1S_3:
+    dec REG_DELAY3
+    brne L_1S_3
+    dec r19
+    brne L_1S_2
+    dec r18
+    brne L_1S_1
+
+    pop REG_DELAY3
+    pop r19
+    pop r18
+    ret
+
+DELAY_CORTO:  
+    ldi DELAY1, 120        
+L_D1: ldi DELAY2, 230
+L_D2: dec DELAY2 
+    brne L_D2 
+    dec DELAY1 
+    brne L_D1 
+    ret
+
+DELAY_REPOSO: 
+    ldi DELAY1, 45          
+L_D3: ldi DELAY2, 120
+L_D4: dec DELAY2 
+    brne L_D4 
+    dec DELAY1 
+    brne L_D3 
+    ret
+
+DELAY_LARGO: 
+    ldi DELAY1, 15
+L_D5: ldi DELAY2, 255
+L_D6: push DELAY2
+    ldi DELAY2, 255
+L_D7: dec DELAY2
+    brne L_D7
+    pop DELAY2
+    dec DELAY2 
+    brne L_D6 
+    dec DELAY1 
+    brne L_D5 
+    ret
+
+
+; ===== MOVIMIENTO MOTOR =====
+
+MOTO_IZQ_N:
+    rcall PIXEL_IZQ
+    dec r22
+    brne MOTO_IZQ_N
+    ret
+
+MOTO_DER_N:
+    rcall PIXEL_DER
+    dec r22
+    brne MOTO_DER_N
+    ret
+
+MOTO_ARR_N:
+    rcall PIXEL_ARRIBA
+    dec r22
+    brne MOTO_ARR_N
+    ret
+
+MOTO_ABJ_N:
+    rcall PIXEL_ABAJO
+    dec r22
+    brne MOTO_ABJ_N
+    ret
+
+MOTO_DIAG_AD_N:
+    rcall PIXEL_DIAG_ARR_DER
+    dec r22
+    brne MOTO_DIAG_AD_N
+    ret
+
+MOTO_DIAG_AI_N:
+    rcall PIXEL_DIAG_ARR_IZQ
+    dec r22
+    brne MOTO_DIAG_AI_N
+    ret
+
+MOTO_DIAG_BD_N:
+    rcall PIXEL_DIAG_ABJ_DER
+    dec r22
+    brne MOTO_DIAG_BD_N
+    ret
+
+MOTO_DIAG_BI_N:
+    rcall PIXEL_DIAG_ABJ_IZQ
+    dec r22
+    brne MOTO_DIAG_BI_N
+    ret
+
+PIXEL_DER:
+    push PASOS
+    ldi PASOS, PASOS_POR_PIXEL
+L_PX_DER: rcall PASO_DER
+    dec PASOS
+    brne L_PX_DER
+    pop PASOS
+    ret
+
+PIXEL_IZQ:
+    push PASOS
+    ldi PASOS, PASOS_POR_PIXEL
+L_PX_IZQ: rcall PASO_IZQ
+    dec PASOS
+    brne L_PX_IZQ
+    pop PASOS
+    ret
+
+PIXEL_ARRIBA:
+    push PASOS
+    ldi PASOS, PASOS_POR_PIXEL
+L_PX_ARR: rcall PASO_ARRIBA
+    dec PASOS
+    brne L_PX_ARR
+    pop PASOS
+    ret
+
+PIXEL_ABAJO:
+    push PASOS
+    ldi PASOS, PASOS_POR_PIXEL
+L_PX_ABJ: rcall PASO_ABAJO
+    dec PASOS
+    brne L_PX_ABJ
+    pop PASOS
+    ret
+
+PIXEL_DIAG_ARR_DER:
+    push PASOS
+    ldi PASOS, PASOS_POR_PIXEL
+L_PX_DAD: rcall PASO_DIAG_ARR_DER
+    dec PASOS
+    brne L_PX_DAD
+    pop PASOS
+    ret
+
+PIXEL_DIAG_ARR_IZQ:
+    push PASOS
+    ldi PASOS, PASOS_POR_PIXEL
+L_PX_DAI: rcall PASO_DIAG_ARR_IZQ
+    dec PASOS
+    brne L_PX_DAI
+    pop PASOS
+    ret
+
+PIXEL_DIAG_ABJ_DER:
+    push PASOS
+    ldi PASOS, PASOS_POR_PIXEL
+L_PX_DBD: rcall PASO_DIAG_ABJ_DER
+    dec PASOS
+    brne L_PX_DBD
+    pop PASOS
+    ret
+
+PIXEL_DIAG_ABJ_IZQ:
+    push PASOS
+    ldi PASOS, PASOS_POR_PIXEL
+L_PX_DBI: rcall PASO_DIAG_ABJ_IZQ
+    dec PASOS
+    brne L_PX_DBI
+    pop PASOS
+    ret
+
+
+; ===== ZONAS =====
+
+IR_A_ZONA_ACTUAL:
+    rcall HOMING           
+    cpi ZONA_ACTUAL, 1
+    breq IR_Z1
+    cpi ZONA_ACTUAL, 2
+    breq IR_Z2
+    cpi ZONA_ACTUAL, 3
+    breq IR_Z3
+    cpi ZONA_ACTUAL, 4
+    breq IR_Z4
+    cpi ZONA_ACTUAL, 5
+    breq IR_Z5
+    ret
+
+IR_Z1: ldi r22, Z1_X
+       ldi Y_POS, Z1_Y
+       rcall MOVER_MM
+       ret
+
+IR_Z2: ldi r22, Z2_X
+       ldi Y_POS, Z2_Y
+       rcall MOVER_MM
+       ret
+
+IR_Z3: ldi r22, Z3_X
+       ldi Y_POS, Z3_Y
+       rcall MOVER_MM
+       ret
+
+IR_Z4: ldi r22, Z4_X
+       ldi Y_POS, Z4_Y
+       rcall MOVER_MM
+       ret
+
+IR_Z5: ldi r22, Z5_X
+       ldi Y_POS, Z5_Y
+       rcall MOVER_MM
+       ret
+
+AVANZAR_ZONA:
+    inc ZONA_ACTUAL
+    cpi ZONA_ACTUAL, 6
+    brne FIN_AVANZA
+    ldi ZONA_ACTUAL, 1     
+FIN_AVANZA:
+    ret
+
+MOVER_MM:
+    tst r22
+    breq MOVER_MM_Y
+L_MM_X:
+    push r22
+    ldi PASOS, PASOS_POR_MM
+L_PASOS_X:
+    rcall PASO_IZQ          
+    dec PASOS
+    brne L_PASOS_X
+    pop r22
+    dec r22
+    brne L_MM_X
+
+MOVER_MM_Y:
+    tst Y_POS
+    breq FIN_MOVER_MM
+L_MM_Y:
+    push Y_POS
+    ldi PASOS, PASOS_POR_MM
+L_PASOS_Y:
+    rcall PASO_ABAJO        
+    dec PASOS
+    brne L_PASOS_Y
+    pop Y_POS
+    dec Y_POS
+    brne L_MM_Y
+
+FIN_MOVER_MM:
+    ret
+
+
+; ===== PASO Y SOLENOIDE =====
+
+HOMING:
+    ; 300 pasos a la derecha
+    ldi PASOS, 150
+H_DER1: rcall PASO_DER       
+    dec PASOS
+    brne H_DER1
+
+    ldi PASOS, 150
+H_DER2: rcall PASO_DER       
+    dec PASOS
+    brne H_DER2
+
+    ; 300 pasos arriba 
+    ldi PASOS, 150
+H_ARR1: rcall PASO_ARRIBA    
+    dec PASOS
+    brne H_ARR1
+
+    ldi PASOS, 150
+H_ARR2: rcall PASO_ARRIBA    
+    dec PASOS
+    brne H_ARR2
+    ret
+
+PASO_DER:
+    ldi TEMP, MOV_DER
+    out PORTD, TEMP
+    rcall DELAY_CORTO
+    clr TEMP
+    out PORTD, TEMP
+    rcall DELAY_REPOSO
+    ret
+
+PASO_IZQ:
+    ldi TEMP, MOV_IZQ
+    out PORTD, TEMP
+    rcall DELAY_CORTO
+    clr TEMP
+    out PORTD, TEMP
+    rcall DELAY_REPOSO
+    ret
+
+PASO_ARRIBA:
+    ldi TEMP, MOV_ARRIBA
+    out PORTD, TEMP
+    rcall DELAY_CORTO
+    clr TEMP
+    out PORTD, TEMP
+    rcall DELAY_REPOSO
+    ret
+
+PASO_ABAJO:
+    ldi TEMP, MOV_ABAJO
+    out PORTD, TEMP
+    rcall DELAY_CORTO
+    clr TEMP
+    out PORTD, TEMP
+    rcall DELAY_REPOSO
+    ret
+
+PASO_DIAG_ARR_DER:
+    ldi TEMP, (MOV_DER | MOV_ARRIBA)
+    out PORTD, TEMP
+    rcall DELAY_CORTO
+    clr TEMP
+    out PORTD, TEMP
+    rcall DELAY_REPOSO
+    ret
+
+PASO_DIAG_ARR_IZQ:
+    ldi TEMP, (MOV_IZQ | MOV_ARRIBA)
+    out PORTD, TEMP
+    rcall DELAY_CORTO
+    clr TEMP
+    out PORTD, TEMP
+    rcall DELAY_REPOSO
+    ret
+
+PASO_DIAG_ABJ_DER:
+    ldi TEMP, (MOV_DER | MOV_ABAJO)
+    out PORTD, TEMP
+    rcall DELAY_CORTO
+    clr TEMP
+    out PORTD, TEMP
+    rcall DELAY_REPOSO
+    ret
+
+PASO_DIAG_ABJ_IZQ:
+    ldi TEMP, (MOV_IZQ | MOV_ABAJO)
+    out PORTD, TEMP
+    rcall DELAY_CORTO
+    clr TEMP
+    out PORTD, TEMP
+    rcall DELAY_REPOSO
+    ret
+
+BAJAR:
+    ldi TEMP, SOL_BAJAR 
+    out PORTD, TEMP
+    rcall DELAY_LARGO   
+    clr TEMP 
+    out PORTD, TEMP
+    ret
+
+SUBIR:
+    ldi TEMP, SOL_SUBIR 
+    out PORTD, TEMP
+    rcall DELAY_LARGO   
+    clr TEMP 
+    out PORTD, TEMP
+    ret
+
+
+
+TEXTO_MENU:
+    .db 13, 10
+    .db "==========================================", 13, 10
+    .db "    SISTEMA CONTROLADOR DE PLOTTER        ", 13, 10
+    .db "==========================================", 13, 10
+    .db "  [1] -> Dibujar Triangulo Rectangulo     ", 13, 10
+    .db "  [2] -> Dibujar Circulo                  ", 13, 10
+    .db "  [3] -> Dibujar Pentagrama               ", 13, 10
+    .db "  [4] -> Dibujar Figura Libre             ", 13, 10
+    .db "  [P] -> Dibujar Pokemon (Ditto)          ", 13, 10
+    .db "  [T] -> Dibujar TODAS las figuras        ", 13, 10
+    .db "  [R] -> Resetear Posicion / Homing       ", 13, 10
+    .db "==========================================", 13, 10
+    .db "Ingrese una opcion:  ", 0
