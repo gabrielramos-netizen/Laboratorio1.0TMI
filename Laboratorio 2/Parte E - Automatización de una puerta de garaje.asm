@@ -8,6 +8,7 @@
 .equ E_ABR = 1        ; abriendo
 .equ E_ABI = 2        ; abierta
 .equ E_CRA = 3        ; cerrando
+.equ E_DET = 4        ; detenido por obstaculo
 
 .org 0x0000
     rjmp inicio
@@ -52,9 +53,11 @@ inicio:
     ldi est, E_CER
     rcall apagar_todo
 
-    ldi ZL, low(txt_cer)
-    ldi ZH, high(txt_cer)
+    ldi ZL, low(txt_cer << 1)
+    ldi ZH, high(txt_cer << 1)
     rcall tx_str
+
+    sei
 
 loop:
     cpi est, E_CER
@@ -69,6 +72,9 @@ loop:
     cpi est, E_CRA
     breq eval_cra
 
+    cpi est, E_DET
+    breq eval_det
+
     rjmp loop
 
 eval_cer:
@@ -79,7 +85,11 @@ eval_cer:
 cmd_abrir:
     ldi est, E_ABR
     sbi PORTD, PORTD6
+    cbi PORTD, PORTD7
     sbi PORTB, PORTB1
+    ldi ZL, low(txt_abr << 1)
+    ldi ZH, high(txt_abr << 1)
+    rcall tx_str
     rjmp loop
 
 eval_abr:
@@ -90,6 +100,9 @@ eval_abr:
 fin_abrir:
     ldi est, E_ABI
     rcall apagar_todo
+    ldi ZL, low(txt_abi << 1)
+    ldi ZH, high(txt_abi << 1)
+    rcall tx_str
     rjmp loop
 
 eval_abi:
@@ -99,8 +112,12 @@ eval_abi:
 
 cmd_cerrar:
     ldi est, E_CRA
+    cbi PORTD, PORTD6
     sbi PORTD, PORTD7
     sbi PORTB, PORTB1
+    ldi ZL, low(txt_cra << 1)
+    ldi ZH, high(txt_cra << 1)
+    rcall tx_str
     rjmp loop
 
 eval_cra:
@@ -111,9 +128,41 @@ eval_cra:
 fin_cerrar:
     ldi est, E_CER
     rcall apagar_todo
+    ldi ZL, low(txt_cer << 1)
+    ldi ZH, high(txt_cer << 1)
+    rcall tx_str
+    rjmp loop
+
+eval_det:
     rjmp loop
 
 isr_pcint0:
+    push tmp
+    in tmp, SREG
+    push tmp
+
+    cpi est, E_ABR
+    breq hay_obstaculo
+    cpi est, E_CRA
+    breq hay_obstaculo
+    rjmp fin_isr
+
+hay_obstaculo:
+    rcall apagar_todo
+    ldi est, E_DET
+
+    ldi ZL, low(txt_obs << 1)
+    ldi ZH, high(txt_obs << 1)
+    rcall tx_str
+
+    ldi ZL, low(txt_det << 1)
+    ldi ZH, high(txt_det << 1)
+    rcall tx_str
+
+fin_isr:
+    pop tmp
+    out SREG, tmp
+    pop tmp
     reti
 
 apagar_todo:
@@ -139,3 +188,5 @@ txt_abr: .DB "Puerta abriendo.", 13, 10, 0
 txt_abi: .DB "Puerta abierta.", 13, 10, 0
 txt_cra: .DB "Puerta cerrando.", 13, 10, 0
 txt_cer: .DB "Puerta cerrada.", 13, 10, 0
+txt_obs: .DB "Obstaculo detectado.", 13, 10, 0
+txt_det: .DB "Movimiento detenido por seguridad.", 13, 10, 0
