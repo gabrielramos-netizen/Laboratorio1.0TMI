@@ -1,4 +1,4 @@
-.include "m328pdef.inc"
+.include "m328pbdef.inc"
 
 ; registros
 .def tmp = r16        ; auxiliar
@@ -16,7 +16,7 @@
 .org 0x0000
     rjmp inicio       ; reset 
 
-.org 0x0003
+.org 0x0006           
     rjmp isr_pcint0   ; pcint0 para sensor s3
 
 
@@ -161,6 +161,9 @@ isr_pcint0:
     push tmp
     push ZL
     push ZH
+
+    sbic PINB, PINB0   
+    rjmp fin_isr
 
     cpi est, E_ABR
     breq hay_obstaculo
