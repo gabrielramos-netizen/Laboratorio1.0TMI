@@ -1,1 +1,178 @@
+#define F_CPU 16000000UL
 
+#include <avr/io.h>
+#include <stdio.h>
+#include <util/delay.h>
+
+void tocar_nota(unsigned int tiempo)
+void LCD_nibble(unsigned char datos)
+void LCD_comando(unsigned char comando)
+void LCD_caracter(char caracter)
+void LCD_texto(const char *texto)
+void LCD_inicializar(void)
+
+int main(void)
+{
+    // PC0 -> DO
+// PC1 -> RE
+// PC2 -> MI
+// PC3 -> FA
+// PC4 -> SOL
+// PC5 -> LA
+// PD2 -> SI
+// PD3 -> DO agudo
+    DDRC &= ~((1 << PC0) |
+          (1 << PC1) |
+          (1 << PC2) |
+          (1 << PC3) |
+          (1 << PC4) |
+          (1 << PC5));
+
+    DDRD &= ~((1 << PD2) |
+          (1 << PD3));
+          
+
+    PORTC |= (1 << PC0) |
+             (1 << PC1) |
+             (1 << PC2) |
+             (1 << PC3) |
+             (1 << PC4) |
+             (1 << PC5);
+
+    PORTD |= (1 << PD2) |
+             (1 << PD3);
+
+
+    DDRB |= (1 << PB1); 
+    PORTB &= ~(1 << PB1);
+    //LCD
+    DDRB |= (1 << PB0) |
+            (1 << PB2) |
+            (1 << PB3) |
+            (1 << PB4) |
+            (1 << PB5);
+
+    DDRD |= (1 << PD4);
+    
+//inicializar lcd
+    LCD_inicializar();
+
+    LCD_texto("PIANO LISTO");
+    
+//principal
+    while(1)
+    {
+        if (!(PINC & (1 << PC0))) {
+            LCD_comando(0x01);
+            LCD_texto("DO");
+            tocar_nota(1908); 
+        }
+       else if (!(PINC & (1 << PC1)))
+       { 
+        LCD_comando(0x01);
+        LCD_texto("RE");
+        tocar_nota(1701);//re
+       }
+        else if (!(PINC & (1 << PC2))) 
+        { 
+        tocar_nota(1515);//mi
+        LCD_comando(0x01);
+        LCD_texto("MI");
+        }
+        else if (!(PINC & (1 << PC3))) 
+        { 
+        tocar_nota(1433);//fa
+        LCD_comando(0x01);
+         LCD_texto("FA");
+        }
+        else if (!(PINC & (1 << PC4)))
+        {
+        tocar_nota(1276);//sol
+        LCD_comando(0x01);
+        LCD_texto("SOL");
+
+        }
+        else if (!(PINC & (1 << PC5)))
+        { 
+        tocar_nota(1136);//la
+        LCD_comando(0x01);
+        LCD_texto("LA");
+        }
+        else if (!(PIND & (1 << PD2)))
+        {
+        tocar_nota(1012);//si
+        LCD_comando(0x01);
+        LCD_texto("SI");
+        }
+        else if (!(PIND & (1 << PD3))) 
+        {
+        tocar_nota(956);//do_Agudo
+        LCD_comando(0x01);
+        LCD_texto("DO");
+        }
+        
+        else { 
+        PORTB &= ~(1 << PB1);//ningun boton presionado
+        }
+    }
+
+    return 0;
+}
+
+void tocar_nota(unsigned int tiempo){
+    PORTB |= (1 << PB1);
+    _delay_us(tiempo);
+    PORTB &= ~(1 << PB1);
+    _delay_us(tiempo);
+    }
+    
+void LCD_nibble(unsigned char datos) {
+    if (datos & 0x01) PORTB |= (1 << PB3);
+    else PORTB &= ~(1 << PB3);
+    if (datos & 0x02) PORTB |= (1 << PB4);
+    else PORTB &= ~(1 << PB4);
+    if (datos & 0x04) PORTB |= (1 << PB5);
+    else PORTB &= ~(1 << PB5);
+    if (datos & 0x08) PORTD |= (1 << PD4);
+    else PORTD &= ~(1 << PD4); PORTB |= (1 << PB2); _delay_us(1);
+    PORTB &= ~(1 << PB2);
+    _delay_us(100); 
+    
+}
+    
+void LCD_comando(unsigned char comando) {
+    PORTB &= ~(1 << PB0);
+    LCD_nibble(comando >> 4);
+    LCD_nibble(comando & 0x0F);
+    _delay_ms(2); 
+    
+}
+
+void LCD_caracter(char caracter) {
+    PORTB |= (1 << PB0);
+    LCD_nibble(caracter >> 4);
+    LCD_nibble(caracter & 0x0F);
+    _delay_us(100); 
+    
+}
+
+void LCD_texto(const char *texto) {
+    while (*texto) {
+    LCD_caracter(*texto);
+    texto++;
+    }
+    
+}
+void LCD_inicializar(void) {
+    _delay_ms(20);
+    LCD_nibble(0x03);
+    _delay_ms(5);
+    LCD_nibble(0x03);
+    _delay_us(150);
+    LCD_nibble(0x03);
+    LCD_nibble(0x02);
+    LCD_comando(0x28);
+    LCD_comando(0x0C);
+    LCD_comando(0x01);
+    _delay_ms(2);
+    }
