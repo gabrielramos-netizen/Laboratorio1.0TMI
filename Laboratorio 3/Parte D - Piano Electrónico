@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <util/delay.h>
 #include <stdint.h>
+
+
+void delay_us_var(unsigned int us);
 void tocar_nota(unsigned int tiempo);
 void LCD_nibble(unsigned char datos);
 void LCD_comando(unsigned char comando);
@@ -19,54 +22,54 @@ void USART_sendString(const char *texto);
 volatile unsigned char modo_piano = 1;
 void reproducir_cancion1(void);
 void tocar_durante(unsigned int periodo, unsigned int duracion_ms);
-void reproducir(const uint8_t *cancion, const uint8_t *bajo, uint8_t cantidad)
+void reproducir(const uint8_t *cancion, const uint8_t *bajo, uint8_t cantidad);
 void reproducir_cancion2(void);
 void reproducir_cancion3(void);
 volatile uint8_t detener_cancion = 0;
 void tocar_dos_notas(unsigned int periodo1, unsigned int periodo2, unsigned int duracion_ms);
 
 const uint16_t notas_melodia[] = {
-    1908, 1701, 1515, 1433, 1276, 1136, 1012, 956
+	1908, 1701, 1515, 1433, 1276, 1136, 1012, 956
 };
 
 // ODA A LA ALEGRIA
 const uint8_t cancion1[] = {
-    2, 2, 3, 4, 4, 3, 2, 1,
-    0, 0, 1, 2, 2, 1, 1
+	2, 2, 3, 4, 4, 3, 2, 1,
+	0, 0, 1, 2, 2, 1, 1
 };
 
 // ESTRELLITA DONDE ESTAS
 const uint8_t cancion2[] = {
-    0, 0, 4, 4, 5, 5, 4,
-    3, 3, 2, 2, 1, 1, 0
+	0, 0, 4, 4, 5, 5, 4,
+	3, 3, 2, 2, 1, 1, 0
 };
 
 // MARY HAD A LITTLE LAMB
 const uint8_t cancion3[] = {
-    2, 1, 0, 1, 2, 2, 2,
-    1, 1, 1, 2, 4, 4,
-    2, 1, 0, 1, 2, 2, 2, 2,
-    1, 1, 2, 1, 0
+	2, 1, 0, 1, 2, 2, 2,
+	1, 1, 1, 2, 4, 4,
+	2, 1, 0, 1, 2, 2, 2, 2,
+	1, 1, 2, 1, 0
 };
 
 // ACOMPANAMIENTO DE ODA A LA ALEGRIA
 const uint8_t bajo1[] = {
-    0, 0, 4, 4, 0, 0, 4, 4,
-    0, 0, 4, 4, 0, 0, 0
+	0, 0, 4, 4, 0, 0, 4, 4,
+	0, 0, 4, 4, 0, 0, 0
 };
 
 // ACOMPANAMIENTO DE ESTRELLITA
 const uint8_t bajo2[] = {
-    0, 0, 4, 4, 0, 0, 4,
-    3, 3, 0, 0, 4, 4, 0
+	0, 0, 4, 4, 0, 0, 4,
+	3, 3, 0, 0, 4, 4, 0
 };
 
 // ACOMPANAMIENTO DE MARY HAD A LITTLE LAMB
 const uint8_t bajo3[] = {
-    0, 0, 4, 4, 0, 0, 4,
-    0, 0, 4, 4, 0, 0,
-    0, 0, 4, 4, 0, 0, 4, 4,
-    0, 0, 4, 0, 0
+	0, 0, 4, 4, 0, 0, 4,
+	0, 0, 4, 4, 0, 0,
+	0, 0, 4, 4, 0, 0, 4, 4,
+	0, 0, 4, 0, 0
 };
 
 int main(void)
@@ -80,238 +83,238 @@ int main(void)
 	// PD2 -> SI
 	// PD3 -> DO agudo
 	DDRC &= ~((1 << PC0) |
-	          (1 << PC1) |
-	          (1 << PC2) |
-	          (1 << PC3) |
-	          (1 << PC4) |
-	          (1 << PC5));
+	(1 << PC1) |
+	(1 << PC2) |
+	(1 << PC3) |
+	(1 << PC4) |
+	(1 << PC5));
 
 	DDRD &= ~((1 << PD2) |
-	          (1 << PD3));
+	(1 << PD3));
 
 
 	PORTC |= (1 << PC0) |
-	         (1 << PC1) |
-	         (1 << PC2) |
-	         (1 << PC3) |
-	         (1 << PC4) |
-	         (1 << PC5);
+	(1 << PC1) |
+	(1 << PC2) |
+	(1 << PC3) |
+	(1 << PC4) |
+	(1 << PC5);
 
 	PORTD |= (1 << PD2) |
-	         (1 << PD3);
+	(1 << PD3);
 
 	//Buzzers
 	DDRB |= (1 << PB1);
 	PORTB &= ~(1 << PB1);
 	
 	DDRD |= (1 << PD5);
-    PORTD &= ~(1 << PD5);
+	PORTD &= ~(1 << PD5);
 	//LCD
 	DDRB |= (1 << PB0) |
-	        (1 << PB2) |
-	        (1 << PB3) |
-	        (1 << PB4) |
-	        (1 << PB5);
+	(1 << PB2) |
+	(1 << PB3) |
+	(1 << PB4) |
+	(1 << PB5);
 
 	DDRD |= (1 << PD4);
 
 	//inicializar lcd
 	LCD_inicializar();
 
-    USART_init(9600);
+	USART_init(9600);
 
 	LCD_texto("PIANO LISTO");
 
 	//principal
 	while(1)
-{
-	    
-       if (UCSR0A & (1 << RXC0))
-        {
-            char comando = USART_receive();
-        
-            if (comando == 'C' || comando == 'c')
-            {
-                while (!(UCSR0A & (1 << RXC0)));
-        
-                char numero = USART_receive();
-        
-                if (numero == '1')
-                {
-                    reproducir_cancion1();
-                }
-                else if (numero == '2')
-                {
-                    reproducir_cancion2();
-                }
-                else if (numero == '3')
-                {
-                    reproducir_cancion3();
-                }
-            }
-            else if (comando == 'P' || comando == 'p')
-            {
-                modo_piano = 1;
-                PORTB &= ~(1 << PB1);
-                PORTD &= ~(1 << PD5);
-        
-                LCD_comando(0x01);
-                LCD_texto("MODO PIANO");
-            }
-        }
+	{
+		
+		if (UCSR0A & (1 << RXC0))
+		{
+			char comando = USART_receive();
+			
+			if (comando == 'C' || comando == 'c')
+			{
+				while (!(UCSR0A & (1 << RXC0)));
+				
+				char numero = USART_receive();
+				
+				if (numero == '1')
+				{
+					reproducir_cancion1();
+				}
+				else if (numero == '2')
+				{
+					reproducir_cancion2();
+				}
+				else if (numero == '3')
+				{
+					reproducir_cancion3();
+				}
+			}
+			else if (comando == 'P' || comando == 'p')
+			{
+				modo_piano = 1;
+				PORTB &= ~(1 << PB1);
+				PORTD &= ~(1 << PD5);
+				
+				LCD_comando(0x01);
+				LCD_texto("MODO PIANO");
+			}
+		}
 
-        
-        
-        if (modo_piano == 1)
-        {
-    		if (!(PINC & (1 << PC0))) {
-    			LCD_comando(0x01);
-    			LCD_texto("DO");
-    			tocar_nota(1908);
-    		}
-    		else if (!(PINC & (1 << PC1)))
-    		{
-    			LCD_comando(0x01);
-    			LCD_texto("RE");
-    			tocar_nota(1701);//re
-    		}
-    		else if (!(PINC & (1 << PC2)))
-    		{
-    			tocar_nota(1515);//mi
-    			LCD_comando(0x01);
-    			LCD_texto("MI");
-    		}
-    		else if (!(PINC & (1 << PC3)))
-    		{
-    			tocar_nota(1433);//fa
-    			LCD_comando(0x01);
-    			LCD_texto("FA");
-    		}
-    		else if (!(PINC & (1 << PC4)))
-    		{
-    			tocar_nota(1276);//sol
-    			LCD_comando(0x01);
-    			LCD_texto("SOL");
-    
-    		}
-    		else if (!(PINC & (1 << PC5)))
-    		{
-    			tocar_nota(1136);//la
-    			LCD_comando(0x01);
-    			LCD_texto("LA");
-    		}
-    		else if (!(PIND & (1 << PD2)))
-    		{
-    			tocar_nota(1012);//si
-    			LCD_comando(0x01);
-    			LCD_texto("SI");
-    		}
-    		else if (!(PIND & (1 << PD3)))
-    		{
-    			tocar_nota(956);//do_Agudo
-    			LCD_comando(0x01);
-    			LCD_texto("DO");
-    		}
-    
-    		else {
-    			PORTB &= ~(1 << PB1);//ningun boton presionado
-    		}
-          }
-}
+		
+		
+		if (modo_piano == 1)
+		{
+			if (!(PINC & (1 << PC0))) {
+				LCD_comando(0x01);
+				LCD_texto("DO");
+				tocar_nota(1908);
+			}
+			else if (!(PINC & (1 << PC1)))
+			{
+				LCD_comando(0x01);
+				LCD_texto("RE");
+				tocar_nota(1701);//re
+			}
+			else if (!(PINC & (1 << PC2)))
+			{
+				tocar_nota(1515);//mi
+				LCD_comando(0x01);
+				LCD_texto("MI");
+			}
+			else if (!(PINC & (1 << PC3)))
+			{
+				tocar_nota(1433);//fa
+				LCD_comando(0x01);
+				LCD_texto("FA");
+			}
+			else if (!(PINC & (1 << PC4)))
+			{
+				tocar_nota(1276);//sol
+				LCD_comando(0x01);
+				LCD_texto("SOL");
+				
+			}
+			else if (!(PINC & (1 << PC5)))
+			{
+				tocar_nota(1136);//la
+				LCD_comando(0x01);
+				LCD_texto("LA");
+			}
+			else if (!(PIND & (1 << PD2)))
+			{
+				tocar_nota(1012);//si
+				LCD_comando(0x01);
+				LCD_texto("SI");
+			}
+			else if (!(PIND & (1 << PD3)))
+			{
+				tocar_nota(956);//do_Agudo
+				LCD_comando(0x01);
+				LCD_texto("DO");
+			}
+			
+			else {
+				PORTB &= ~(1 << PB1);//ningun boton presionado
+			}
+		}
+	}
 
 	return 0;
 }
 
 void tocar_nota(unsigned int tiempo) {
 	PORTB |= (1 << PB1);
-	_delay_us(tiempo);
+	delay_us_var(tiempo);
 	PORTB &= ~(1 << PB1);
-	_delay_us(tiempo);
+	delay_us_var(tiempo);
 }
 
 void tocar_durante(unsigned int periodo, unsigned int duracion_ms)
 {
-    unsigned long ciclos =
-        ((unsigned long)duracion_ms * 1000UL) /
-        (2UL * periodo);
+	unsigned long ciclos =
+	((unsigned long)duracion_ms * 1000UL) /
+	(2UL * periodo);
 
-    for (unsigned long i = 0; i < ciclos; i++)
-    {
-        tocar_nota(periodo);
-    }
+	for (unsigned long i = 0; i < ciclos; i++)
+	{
+		tocar_nota(periodo);
+	}
 }
 
 void tocar_dos_notas(unsigned int periodo1, unsigned int periodo2, unsigned int duracion_ms)
 {
-    unsigned long tiempo1 = 0;
-    unsigned long tiempo2 = 0;
+	unsigned long tiempo1 = 0;
+	unsigned long tiempo2 = 0;
 
-    unsigned long total =
-        (unsigned long)duracion_ms * 1000UL;
+	unsigned long total =
+	(unsigned long)duracion_ms * 1000UL;
 
-    uint8_t estado1 = 0;
-    uint8_t estado2 = 0;
+	uint8_t estado1 = 0;
+	uint8_t estado2 = 0;
 
-    PORTB &= ~(1 << PB1);
-    PORTD &= ~(1 << PD5);
+	PORTB &= ~(1 << PB1);
+	PORTD &= ~(1 << PD5);
 
-    detener_cancion = 0;
+	detener_cancion = 0;
 
-    for (unsigned long tiempo = 0;
-         tiempo < total;
-         tiempo += 50)
-    {
-        // Revisar si se recibio el comando para detener
-        if (UCSR0A & (1 << RXC0))
-        {
-            char comando = USART_receive();
+	for (unsigned long tiempo = 0;
+	tiempo < total;
+	tiempo += 50)
+	{
+		// Revisar si se recibio el comando para detener
+		if (UCSR0A & (1 << RXC0))
+		{
+			char comando = USART_receive();
 
-            if (comando == 'P' || comando == 'p')
-            {
-                detener_cancion = 1;
-                break;
-            }
-        }
+			if (comando == 'P' || comando == 'p')
+			{
+				detener_cancion = 1;
+				break;
+			}
+		}
 
-        // Generar la melodia en el primer buzzer
-        if (periodo1 > 0)
-        {
-            tiempo1 += 50;
+		// Generar la melodia en el primer buzzer
+		if (periodo1 > 0)
+		{
+			tiempo1 += 50;
 
-            if (tiempo1 >= periodo1)
-            {
-                tiempo1 = 0;
-                estado1 = !estado1;
+			if (tiempo1 >= periodo1)
+			{
+				tiempo1 = 0;
+				estado1 = !estado1;
 
-                if (estado1)
-                    PORTB |= (1 << PB1);
-                else
-                    PORTB &= ~(1 << PB1);
-            }
-        }
+				if (estado1)
+				PORTB |= (1 << PB1);
+				else
+				PORTB &= ~(1 << PB1);
+			}
+		}
 
-        // Generar el bajo en el segundo buzzer
-        if (periodo2 > 0)
-        {
-            tiempo2 += 50;
+		// Generar el bajo en el segundo buzzer
+		if (periodo2 > 0)
+		{
+			tiempo2 += 50;
 
-            if (tiempo2 >= periodo2)
-            {
-                tiempo2 = 0;
-                estado2 = !estado2;
+			if (tiempo2 >= periodo2)
+			{
+				tiempo2 = 0;
+				estado2 = !estado2;
 
-                if (estado2)
-                    PORTD |= (1 << PD5);
-                else
-                    PORTD &= ~(1 << PD5);
-            }
-        }
+				if (estado2)
+				PORTD |= (1 << PD5);
+				else
+				PORTD &= ~(1 << PD5);
+			}
+		}
 
-        _delay_us(50);
-    }
+		_delay_us(50);
+	}
 
-    PORTB &= ~(1 << PB1);
-    PORTD &= ~(1 << PD5);
+	PORTB &= ~(1 << PB1);
+	PORTD &= ~(1 << PD5);
 }
 
 void LCD_nibble(unsigned char datos) {
@@ -387,65 +390,72 @@ void USART_transmit(unsigned char dato)
 
 unsigned char USART_receive(void)
 {
-    while (!(UCSR0A & (1 << RXC0)));
-    return UDR0;
+	while (!(UCSR0A & (1 << RXC0)));
+	return UDR0;
 }
 
 void USART_sendString(const char *texto)
 {
-    while (*texto)
-    {
-        USART_transmit(*texto);
-        texto++;
-    }
+	while (*texto)
+	{
+		USART_transmit(*texto);
+		texto++;
+	}
 }
 
 void reproducir(const uint8_t *cancion, const uint8_t *bajo, uint8_t cantidad)
 {
-    modo_piano = 0;
+	modo_piano = 0;
 
-    for (uint8_t i = 0; i < cantidad; i++)
-    {
-        tocar_dos_notas(
-            notas_melodia[cancion[i]],
-            notas_melodia[bajo[i]] * 2U,
-            300
-        );
+	for (uint8_t i = 0; i < cantidad; i++)
+	{
+		tocar_dos_notas(
+		notas_melodia[cancion[i]],
+		notas_melodia[bajo[i]] * 2U,
+		300
+		);
 
-        if (detener_cancion)
-            break;
+		if (detener_cancion)
+		break;
 
-        _delay_ms(40);
-    }
+		_delay_ms(40);
+	}
 
-    PORTB &= ~(1 << PB1);
-    PORTD &= ~(1 << PD5);
+	PORTB &= ~(1 << PB1);
+	PORTD &= ~(1 << PD5);
 
-    modo_piano = 1;
+	modo_piano = 1;
 
-    LCD_comando(0x01);
-    LCD_texto("MODO PIANO");
+	LCD_comando(0x01);
+	LCD_texto("MODO PIANO");
 }
 void reproducir_cancion1(void)
 {
-    LCD_comando(0x01);
-    LCD_texto("ODA ALEGRIA");
+	LCD_comando(0x01);
+	LCD_texto("ODA ALEGRIA");
 
-    reproducir(cancion1, bajo1, sizeof(cancion1));
+	reproducir(cancion1, bajo1, sizeof(cancion1));
 }
 
 void reproducir_cancion2(void)
 {
-    LCD_comando(0x01);
-    LCD_texto("ESTRELLITA");
+	LCD_comando(0x01);
+	LCD_texto("ESTRELLITA");
 
-    reproducir(cancion2, bajo2,  sizeof(cancion2));
+	reproducir(cancion2, bajo2,  sizeof(cancion2));
 }
 
 void reproducir_cancion3(void)
 {
-    LCD_comando(0x01);
-    LCD_texto("MARY LAMB");
+	LCD_comando(0x01);
+	LCD_texto("MARY LAMB");
 
-    reproducir(cancion3, bajo3, sizeof(cancion3));
+	reproducir(cancion3, bajo3, sizeof(cancion3));
+}
+
+void delay_us_var(unsigned int us) {
+	while (us > 0) {
+		_delay_us(1);
+		us--;
+	}
 }
