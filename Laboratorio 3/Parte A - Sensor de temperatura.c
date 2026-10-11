@@ -23,15 +23,21 @@ UmbralesTemperatura sistema_umbrales = {16, 25}; // pm_min = 16, pm_max = 25 -->
 bool actualizar_punto_medio(int16_t nuevo_min) {
 	int16_t nuevo_max = nuevo_min + 9; // Ancho de 10°C (ej. 16 a 25)
 	
-	// Verificamos que la velocidad alta no supere el límite del DHT11 (50°C)
-	// Alta velocidad arranca a partir de (nuevo_max + 21)
-	if ((nuevo_max + 21) > DHT11_MAX_TEMP) {
-		return false; // Cambio no permitido por seguridad del sensor
+	// El limite absoluto para que el Rango 5 (Alta velocidad) sea medible por el DHT11
+	// es que el limite superior del punto medio (nuevo_max) no exceda 29°C.
+	// Asi, Rango 3 (Baja) llega a 39°C, Rango 4 (Media) llega a 49°C, y Rango 5 arranca en 50°C.
+	if ((nuevo_max + 21) > (DHT11_MAX_TEMP + 21)) {
+		return false;
 	}
 	
+	// Forma simplificada y exacta: el maximo punto medio permitido es 29°C
+	if (nuevo_max > 29) {
+		return false; // Bloquea si supera la escala de seguridad del DHT11
+	}
+
 	sistema_umbrales.pm_min = nuevo_min;
 	sistema_umbrales.pm_max = nuevo_max;
-	return true; // Se esta dentro del rango aceptado y se actualizan los umbrales de temperatura
+	return true;
 }
 
 // Definimos una funcion para la comunicacion serial
