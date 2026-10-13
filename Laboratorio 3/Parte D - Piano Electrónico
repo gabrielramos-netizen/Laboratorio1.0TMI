@@ -50,51 +50,53 @@ const uint16_t notas_melodia[] = {
 };
 
 // SEVEN NATION ARMY
+// El valor 8 representa un silencio.
 const uint8_t cancion1[] = {
-	2, 2, 5, 2, 1, 0, 0,
-	2, 2, 5, 2, 1, 0, 0,
-	2, 2, 5, 2, 1, 0, 0,
-	2, 2, 5, 2, 1, 0, 0
+	2, 2, 5, 2, 1, 0, 0, 8,
+	2, 2, 5, 2, 1, 0, 0, 8,
+	2, 2, 5, 2, 1, 0, 0, 8,
+	2, 2, 5, 2, 1, 0, 0, 8
 };
 
 // SHAPE OF YOU
 const uint8_t cancion2[] = {
-	4, 4, 4, 2, 2, 2, 0, 0,
-	2, 2, 2, 4, 4, 4, 2, 2,
-	0, 0, 2, 2, 4, 4, 2, 0,
-	2, 2, 4, 4, 2, 0
+	4, 4, 4, 2, 2, 2, 0, 0, 8,
+	2, 2, 2, 4, 4, 4, 2, 2, 8,
+	0, 0, 2, 2, 4, 4, 2, 0, 8,
+	2, 2, 4, 4, 2, 0, 8
 };
 
 // BAD ROMANCE
 const uint8_t cancion3[] = {
-	4, 4, 5, 4, 2, 2, 0, 2,
-	4, 4, 5, 4, 2, 2, 0, 2,
-	5, 5, 4, 2, 4, 2, 0, 0,
-	4, 4, 5, 4, 2, 2, 0, 2
+	4, 4, 5, 4, 2, 2, 0, 2, 8,
+	4, 4, 5, 4, 2, 2, 0, 2, 8,
+	5, 5, 4, 2, 4, 2, 0, 0, 8,
+	4, 4, 5, 4, 2, 2, 0, 2, 8
 };
 
 // ACOMPANAMIENTO DE SEVEN NATION ARMY
+// El 8 deja en silencio tambien el buzzer de acompanamiento.
 const uint8_t bajo1[] = {
-	0, 0, 0, 0, 1, 1, 1,
-	0, 0, 0, 0, 1, 1, 1,
-	0, 0, 0, 0, 1, 1, 1,
-	0, 0, 0, 0, 1, 1, 1
+	0, 0, 0, 0, 1, 1, 1, 8,
+	0, 0, 0, 0, 1, 1, 1, 8,
+	0, 0, 0, 0, 1, 1, 1, 8,
+	0, 0, 0, 0, 1, 1, 1, 8
 };
 
 // ACOMPANAMIENTO DE SHAPE OF YOU
 const uint8_t bajo2[] = {
-	0, 0, 4, 4, 0, 0, 4, 4,
-	0, 0, 4, 4, 0, 0, 4, 4,
-	0, 0, 4, 4, 0, 0, 4, 4,
-	0, 0, 4, 4, 0, 0
+	0, 0, 4, 4, 0, 0, 4, 4, 8,
+	0, 0, 4, 4, 0, 0, 4, 4, 8,
+	0, 0, 4, 4, 0, 0, 4, 4, 8,
+	0, 0, 4, 4, 0, 0, 8
 };
 
 // ACOMPANAMIENTO DE BAD ROMANCE
 const uint8_t bajo3[] = {
-	0, 0, 4, 4, 0, 0, 4, 4,
-	0, 0, 4, 4, 0, 0, 4, 4,
-	5, 5, 4, 4, 2, 2, 0, 0,
-	0, 0, 4, 4, 0, 0, 4, 4
+	0, 0, 4, 4, 0, 0, 4, 4, 8,
+	0, 0, 4, 4, 0, 0, 4, 4, 8,
+	5, 5, 4, 4, 2, 2, 0, 0, 8,
+	0, 0, 4, 4, 0, 0, 4, 4, 8
 };
 
 int main(void)
@@ -189,47 +191,47 @@ int main(void)
 			{
 				LCD_comando(0x01);
 				LCD_texto("DO");
-				tocar_nota(1908);
+				tocar_durante(1908, 150);
 			}
 			else if (!(PINC & (1 << PC1)))
 			{
 				LCD_comando(0x01);
 				LCD_texto("RE");
-				tocar_nota(1701);
+				tocar_durante(1701, 150);
 			}
 			else if (!(PINC & (1 << PC2)))
 			{
-				tocar_nota(1515);
+				tocar_durante(1515, 150);
 				LCD_comando(0x01);
 				LCD_texto("MI");
 			}
 			else if (!(PINC & (1 << PC3)))
 			{
-				tocar_nota(1433);
+				tocar_durante(1433, 150);
 				LCD_comando(0x01);
 				LCD_texto("FA");
 			}
 			else if (!(PIND & (1 << PD6)))
 			{
-				tocar_nota(1276);
+				tocar_durante(1276, 150);
 				LCD_comando(0x01);
 				LCD_texto("SOL");
 			}
 			else if (!(PIND & (1 << PD7)))
 			{
-				tocar_nota(1136);
+				tocar_durante(1136, 150);
 				LCD_comando(0x01);
 				LCD_texto("LA");
 			}
 			else if (!(PIND & (1 << PD2)))
 			{
-				tocar_nota(1012);
+				tocar_durante(1012, 150);
 				LCD_comando(0x01);
 				LCD_texto("SI");
 			}
 			else if (!(PIND & (1 << PD3)))
 			{
-				tocar_nota(956);
+				tocar_durante(956, 150);
 				LCD_comando(0x01);
 				LCD_texto("DO");
 			}
@@ -461,20 +463,27 @@ uint8_t cantidad)
 	{
 		unsigned int periodo1 = 0;
 		unsigned int periodo2 = 0;
+		unsigned int duracion = 300;
 
-		// Obtener la nota de la melodia
+		// Los valores de 0 a 7 son notas; 8 representa silencio.
 		if (cancion[i] < 8)
 		{
 			periodo1 = notas_melodia[cancion[i]];
 		}
 
-		// Obtener la nota del acompanamiento
+		// El valor 8 deja apagado el buzzer de acompanamiento.
 		if (bajo[i] < 8)
 		{
 			periodo2 = notas_melodia[bajo[i]] * 2U;
 		}
 
-		tocar_dos_notas(periodo1, periodo2, 300);
+		// Si ambos arreglos indican silencio, hacer una pausa breve.
+		if (cancion[i] == 8 && bajo[i] == 8)
+		{
+			duracion = 140;
+		}
+
+		tocar_dos_notas(periodo1, periodo2, duracion);
 
 		if (detener_cancion)
 		{
