@@ -11,6 +11,10 @@
 #define IN1 PD2
 #define IN2 PD3
 
+// Límites de velocidad del motor
+#define PWM_MIN 70   // Mínimo para vencer la zona muerta
+#define PWM_MAX 180  // Límite máximo de seguridad
+
 // Variable global para la luz deseada enviada por UART
 volatile uint16_t setpoint = 500;
 char buffer_rx[10];
@@ -98,15 +102,48 @@ int main(void) {
 
     uint16_t ldr = 0;
     uint16_t pot = 0;
+    int16_t error = 0;
+    int16_t error_abs = 0;
+    int16_t pwm_calc = 0;
+    char dir_str[5];
 
     while (1) {
         ldr = adc_read(0); // LDR en A0
         pot = adc_read(1); // Potenciómetro en A1
 
-        // Giro de prueba inicial
-        PORTD |= (1 << IN1);
-        PORTD &= ~(1 << IN2);
-        OCR1A = 120;
+        // Cálculo de error básico
+        error = (int16_t)setpoint - ldr;
+        error_abs = (error < 0) ? -error : error;
+
+        // Selección de sentido de giro según el signo del error
+        if (error > 0) {
+            PORTD |= (1 << IN1);
+            PORTD &= ~(1 << IN2);
+            strcpy(dir_str, "IZQ");
+        } 
+        else if (error < 0) {
+            PORTD &= ~(1 << IN1);
+            PORTD |= (1 << IN2);
+            strcpy(dir_str, "DER");
+        } 
+        else {
+            PORTD &= ~((1 << IN1) | (1 << IN2));
+            strcpy(dir_str, "STOP");
+        }
+
+        // Control de velocidad con margen de histéresis (+-10)
+        if (error_abs > 10) {
+            pwm_calc = PWM_MIN + (((int32_t)error_abs * (PWM_MAX - PWM_MIN)) / 1023);
+            if (pwm_calc > PWM_MAX) {
+                pwm_calc = PWM_MAX;
+            }
+        } else {
+            PORTD &= ~((1 << IN1) | (1 << IN2));
+            pwm_calc = 0;
+            strcpy(dir_str, "STOP");
+        }
+
+        OCR1A = (uint8_t)pwm_calc;
 
         _delay_ms(100);
     }
