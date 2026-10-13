@@ -102,17 +102,34 @@ int main(void) {
 
     uint16_t ldr = 0;
     uint16_t pot = 0;
+    int16_t luz_simulada = 0;
     int16_t error = 0;
     int16_t error_abs = 0;
     int16_t pwm_calc = 0;
     char dir_str[5];
+    char buffer_tx[60];
 
     while (1) {
         ldr = adc_read(0); // LDR en A0
         pot = adc_read(1); // Potenciómetro en A1
 
-        // Cálculo de error básico
-        error = (int16_t)setpoint - ldr;
+        // Protección contra división por cero si la LDR está a oscuras
+        uint16_t ldr_ref = (ldr > 10) ? ldr : 10;
+
+        // 1. Resta de la atenuación de la persiana
+        int32_t luz_neta = (int32_t)ldr - (int32_t)pot;
+        if (luz_neta < 0) {
+            luz_neta = 0;
+        }
+
+        // 2. Normalización de la luz simulada al rango 0-1023
+        luz_simulada = (int16_t)((luz_neta * 1023) / ldr_ref);
+        if (luz_simulada > 1023) {
+            luz_simulada = 1023;
+        }
+
+        // 3. Cálculo del error respecto al setpoint
+        error = (int16_t)setpoint - luz_simulada;
         error_abs = (error < 0) ? -error : error;
 
         // Selección de sentido de giro según el signo del error
@@ -131,7 +148,7 @@ int main(void) {
             strcpy(dir_str, "STOP");
         }
 
-        // Control de velocidad con margen de histéresis (+-10)
+        // Control de velocidad y histéresis de +-10
         if (error_abs > 10) {
             pwm_calc = PWM_MIN + (((int32_t)error_abs * (PWM_MAX - PWM_MIN)) / 1023);
             if (pwm_calc > PWM_MAX) {
@@ -144,6 +161,11 @@ int main(void) {
         }
 
         OCR1A = (uint8_t)pwm_calc;
+
+        // Envío de telemetría en formato CSV hacia Python
+        snprintf(buffer_tx, sizeof(buffer_tx), "%u,%u,%u,%d,%s\r\n", 
+                 setpoint, ldr, pot, pwm_calc, dir_str);
+        uart_send_string(buffer_tx);
 
         _delay_ms(100);
     }
