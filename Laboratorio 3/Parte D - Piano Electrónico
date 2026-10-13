@@ -42,44 +42,52 @@ const uint16_t notas_melodia[] = {
 	1908, 1701, 1515, 1433, 1276, 1136, 1012, 956
 };
 
-// ODA A LA ALEGRIA
+// SEVEN NATION ARMY
 const uint8_t cancion1[] = {
-	2, 2, 3, 4, 4, 3, 2, 1,
-	0, 0, 1, 2, 2, 1, 1
+    2, 2, 5, 2, 1, 0, 0,
+    2, 2, 5, 2, 1, 0, 0,
+    2, 2, 5, 2, 1, 0, 0,
+    2, 2, 5, 2, 1, 0, 0
 };
 
-// ESTRELLITA DONDE ESTAS
+// SHAPE OF YOU
 const uint8_t cancion2[] = {
-	0, 0, 4, 4, 5, 5, 4,
-	3, 3, 2, 2, 1, 1, 0
+    4, 4, 4, 2, 2, 2, 0, 0,
+    2, 2, 2, 4, 4, 4, 2, 2,
+    0, 0, 2, 2, 4, 4, 2, 0,
+    2, 2, 4, 4, 2, 0
 };
 
-// MARY HAD A LITTLE LAMB
+// BAD ROMANCE
 const uint8_t cancion3[] = {
-	2, 1, 0, 1, 2, 2, 2,
-	1, 1, 1, 2, 4, 4,
-	2, 1, 0, 1, 2, 2, 2, 2,
-	1, 1, 2, 1, 0
+    4, 4, 5, 4, 2, 2, 0, 2,
+    4, 4, 5, 4, 2, 2, 0, 2,
+    5, 5, 4, 2, 4, 2, 0, 0,
+    4, 4, 5, 4, 2, 2, 0, 2
 };
 
-// ACOMPANAMIENTO DE ODA A LA ALEGRIA
+// ACOMPANAMIENTO DE SEVEN NATION ARMY
 const uint8_t bajo1[] = {
-	0, 0, 4, 4, 0, 0, 4, 4,
-	0, 0, 4, 4, 0, 0, 0
+    0, 0, 0, 0, 1, 1, 1,
+    0, 0, 0, 0, 1, 1, 1,
+    0, 0, 0, 0, 1, 1, 1,
+    0, 0, 0, 0, 1, 1, 1
 };
 
-// ACOMPANAMIENTO DE ESTRELLITA
+// ACOMPANAMIENTO DE SHAPE OF YOU
 const uint8_t bajo2[] = {
-	0, 0, 4, 4, 0, 0, 4,
-	3, 3, 0, 0, 4, 4, 0
+    0, 0, 4, 4, 0, 0, 4, 4,
+    0, 0, 4, 4, 0, 0, 4, 4,
+    0, 0, 4, 4, 0, 0, 4, 4,
+    0, 0, 4, 4, 0, 0
 };
 
-// ACOMPANAMIENTO DE MARY HAD A LITTLE LAMB
+// ACOMPANAMIENTO DE BAD ROMANCE
 const uint8_t bajo3[] = {
-	0, 0, 4, 4, 0, 0, 4,
-	0, 0, 4, 4, 0, 0,
-	0, 0, 4, 4, 0, 0, 4, 4,
-	0, 0, 4, 0, 0
+    0, 0, 4, 4, 0, 0, 4, 4,
+    0, 0, 4, 4, 0, 0, 4, 4,
+    5, 5, 4, 4, 2, 2, 0, 0,
+    0, 0, 4, 4, 0, 0, 4, 4
 };
 
 int main(void)
@@ -410,7 +418,7 @@ void reproducir(const uint8_t *cancion, const uint8_t *bajo, uint8_t cantidad)
 void reproducir_cancion1(void)
 {
 	LCD_comando(0x01);
-	LCD_texto("ODA ALEGRIA");
+	LCD_texto("SEVEN NATION");
 
 	reproducir(cancion1, bajo1, sizeof(cancion1));
 }
@@ -418,7 +426,7 @@ void reproducir_cancion1(void)
 void reproducir_cancion2(void)
 {
 	LCD_comando(0x01);
-	LCD_texto("ESTRELLITA");
+	LCD_texto("SHAPE OF YOU");
 
 	reproducir(cancion2, bajo2,  sizeof(cancion2));
 }
@@ -426,7 +434,7 @@ void reproducir_cancion2(void)
 void reproducir_cancion3(void)
 {
 	LCD_comando(0x01);
-	LCD_texto("MARY LAMB");
+	LCD_texto("BAD ROMANCE");
 
 	reproducir(cancion3, bajo3, sizeof(cancion3));
 }
