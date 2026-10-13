@@ -8,11 +8,15 @@
 
 void delay_us_var(unsigned int us);
 void tocar_nota(unsigned int tiempo);
-void LCD_nibble(unsigned char datos);
 void LCD_comando(unsigned char comando);
 void LCD_caracter(char caracter);
 void LCD_texto(const char *texto);
 void LCD_inicializar(void);
+
+void TWI_inicializar(void);
+void TWI_escribir(unsigned char dato);
+void LCD_enviar_nibble(unsigned char datos, unsigned char rs);
+void LCD_enviar_byte(unsigned char dato, unsigned char rs);
 
 void USART_init(unsigned int baud);
 void USART_transmit(unsigned char dato);
@@ -20,12 +24,15 @@ unsigned char USART_receive(void);
 void USART_sendString(const char *texto);
 
 volatile unsigned char modo_piano = 1;
+
 void reproducir_cancion1(void);
 void tocar_durante(unsigned int periodo, unsigned int duracion_ms);
 void reproducir(const uint8_t *cancion, const uint8_t *bajo, uint8_t cantidad);
 void reproducir_cancion2(void);
 void reproducir_cancion3(void);
+
 volatile uint8_t detener_cancion = 0;
+
 void tocar_dos_notas(unsigned int periodo1, unsigned int periodo2, unsigned int duracion_ms);
 
 volatile uint16_t periodo_buzzer1 = 0;
@@ -42,44 +49,52 @@ const uint16_t notas_melodia[] = {
 	1908, 1701, 1515, 1433, 1276, 1136, 1012, 956
 };
 
-// ODA A LA ALEGRIA
+// SEVEN NATION ARMY
 const uint8_t cancion1[] = {
-	2, 2, 3, 4, 4, 3, 2, 1,
-	0, 0, 1, 2, 2, 1, 1
+	2, 2, 5, 2, 1, 0, 0,
+	2, 2, 5, 2, 1, 0, 0,
+	2, 2, 5, 2, 1, 0, 0,
+	2, 2, 5, 2, 1, 0, 0
 };
 
-// ESTRELLITA DONDE ESTAS
+// SHAPE OF YOU
 const uint8_t cancion2[] = {
-	0, 0, 4, 4, 5, 5, 4,
-	3, 3, 2, 2, 1, 1, 0
+	4, 4, 4, 2, 2, 2, 0, 0,
+	2, 2, 2, 4, 4, 4, 2, 2,
+	0, 0, 2, 2, 4, 4, 2, 0,
+	2, 2, 4, 4, 2, 0
 };
 
-// MARY HAD A LITTLE LAMB
+// BAD ROMANCE
 const uint8_t cancion3[] = {
-	2, 1, 0, 1, 2, 2, 2,
-	1, 1, 1, 2, 4, 4,
-	2, 1, 0, 1, 2, 2, 2, 2,
-	1, 1, 2, 1, 0
+	4, 4, 5, 4, 2, 2, 0, 2,
+	4, 4, 5, 4, 2, 2, 0, 2,
+	5, 5, 4, 2, 4, 2, 0, 0,
+	4, 4, 5, 4, 2, 2, 0, 2
 };
 
-// ACOMPANAMIENTO DE ODA A LA ALEGRIA
+// ACOMPANAMIENTO DE SEVEN NATION ARMY
 const uint8_t bajo1[] = {
-	0, 0, 4, 4, 0, 0, 4, 4,
-	0, 0, 4, 4, 0, 0, 0
+	0, 0, 0, 0, 1, 1, 1,
+	0, 0, 0, 0, 1, 1, 1,
+	0, 0, 0, 0, 1, 1, 1,
+	0, 0, 0, 0, 1, 1, 1
 };
 
-// ACOMPANAMIENTO DE ESTRELLITA
+// ACOMPANAMIENTO DE SHAPE OF YOU
 const uint8_t bajo2[] = {
-	0, 0, 4, 4, 0, 0, 4,
-	3, 3, 0, 0, 4, 4, 0
+	0, 0, 4, 4, 0, 0, 4, 4,
+	0, 0, 4, 4, 0, 0, 4, 4,
+	0, 0, 4, 4, 0, 0, 4, 4,
+	0, 0, 4, 4, 0, 0
 };
 
-// ACOMPANAMIENTO DE MARY HAD A LITTLE LAMB
+// ACOMPANAMIENTO DE BAD ROMANCE
 const uint8_t bajo3[] = {
-	0, 0, 4, 4, 0, 0, 4,
-	0, 0, 4, 4, 0, 0,
 	0, 0, 4, 4, 0, 0, 4, 4,
-	0, 0, 4, 0, 0
+	0, 0, 4, 4, 0, 0, 4, 4,
+	5, 5, 4, 4, 2, 2, 0, 0,
+	0, 0, 4, 4, 0, 0, 4, 4
 };
 
 int main(void)
@@ -88,47 +103,41 @@ int main(void)
 	// PC1 -> RE
 	// PC2 -> MI
 	// PC3 -> FA
-	// PC4 -> SOL
-	// PC5 -> LA
+	// PD6 -> SOL (antes PC4)
+	// PD7 -> LA  (antes PC5)
 	// PD2 -> SI
 	// PD3 -> DO agudo
+	// PC4 -> SDA del LCD I2C
+	// PC5 -> SCL del LCD I2C
+
 	DDRC &= ~((1 << PC0) |
 	(1 << PC1) |
 	(1 << PC2) |
-	(1 << PC3) |
-	(1 << PC4) |
-	(1 << PC5));
+	(1 << PC3));
 
 	DDRD &= ~((1 << PD2) |
-	(1 << PD3));
-
+	(1 << PD3) |
+	(1 << PD6) |
+	(1 << PD7));
 
 	PORTC |= (1 << PC0) |
 	(1 << PC1) |
 	(1 << PC2) |
-	(1 << PC3) |
-	(1 << PC4) |
-	(1 << PC5);
+	(1 << PC3);
 
 	PORTD |= (1 << PD2) |
-	(1 << PD3);
+	(1 << PD3) |
+	(1 << PD6) |
+	(1 << PD7);
 
-	//Buzzers
+	// Buzzers
 	DDRB |= (1 << PB1);
 	PORTB &= ~(1 << PB1);
-	
+
 	DDRD |= (1 << PD5);
 	PORTD &= ~(1 << PD5);
-	//LCD
-	DDRB |= (1 << PB0) |
-	(1 << PB2) |
-	(1 << PB3) |
-	(1 << PB4) |
-	(1 << PB5);
 
-	DDRD |= (1 << PD4);
-
-	//inicializar lcd
+	// Inicializar LCD I2C
 	LCD_inicializar();
 
 	USART_init(9600);
@@ -137,20 +146,19 @@ int main(void)
 
 	LCD_texto("PIANO LISTO");
 
-	//principal
-	while(1)
+	// Principal
+	while (1)
 	{
-		
 		if (UCSR0A & (1 << RXC0))
 		{
 			char comando = USART_receive();
-			
+
 			if (comando == 'C' || comando == 'c')
 			{
 				while (!(UCSR0A & (1 << RXC0)));
-				
+
 				char numero = USART_receive();
-				
+
 				if (numero == '1')
 				{
 					reproducir_cancion1();
@@ -169,17 +177,16 @@ int main(void)
 				modo_piano = 1;
 				PORTB &= ~(1 << PB1);
 				PORTD &= ~(1 << PD5);
-				
+
 				LCD_comando(0x01);
 				LCD_texto("MODO PIANO");
 			}
 		}
 
-		
-		
 		if (modo_piano == 1)
 		{
-			if (!(PINC & (1 << PC0))) {
+			if (!(PINC & (1 << PC0)))
+			{
 				LCD_comando(0x01);
 				LCD_texto("DO");
 				tocar_nota(1908);
@@ -188,48 +195,47 @@ int main(void)
 			{
 				LCD_comando(0x01);
 				LCD_texto("RE");
-				tocar_nota(1701);//re
+				tocar_nota(1701);
 			}
 			else if (!(PINC & (1 << PC2)))
 			{
-				tocar_nota(1515);//mi
+				tocar_nota(1515);
 				LCD_comando(0x01);
 				LCD_texto("MI");
 			}
 			else if (!(PINC & (1 << PC3)))
 			{
-				tocar_nota(1433);//fa
+				tocar_nota(1433);
 				LCD_comando(0x01);
 				LCD_texto("FA");
 			}
-			else if (!(PINC & (1 << PC4)))
+			else if (!(PIND & (1 << PD6)))
 			{
-				tocar_nota(1276);//sol
+				tocar_nota(1276);
 				LCD_comando(0x01);
 				LCD_texto("SOL");
-				
 			}
-			else if (!(PINC & (1 << PC5)))
+			else if (!(PIND & (1 << PD7)))
 			{
-				tocar_nota(1136);//la
+				tocar_nota(1136);
 				LCD_comando(0x01);
 				LCD_texto("LA");
 			}
 			else if (!(PIND & (1 << PD2)))
 			{
-				tocar_nota(1012);//si
+				tocar_nota(1012);
 				LCD_comando(0x01);
 				LCD_texto("SI");
 			}
 			else if (!(PIND & (1 << PD3)))
 			{
-				tocar_nota(956);//do_Agudo
+				tocar_nota(956);
 				LCD_comando(0x01);
 				LCD_texto("DO");
 			}
-			
-			else {
-				PORTB &= ~(1 << PB1);//ningun boton presionado
+			else
+			{
+				PORTB &= ~(1 << PB1);
 			}
 		}
 	}
@@ -237,7 +243,8 @@ int main(void)
 	return 0;
 }
 
-void tocar_nota(unsigned int tiempo) {
+void tocar_nota(unsigned int tiempo)
+{
 	PORTB |= (1 << PB1);
 	delay_us_var(tiempo);
 	PORTB &= ~(1 << PB1);
@@ -295,58 +302,117 @@ void tocar_dos_notas(unsigned int periodo1, unsigned int periodo2, unsigned int 
 	PORTB &= ~(1 << PB1);
 	PORTD &= ~(1 << PD5);
 }
-void LCD_nibble(unsigned char datos) {
-	if (datos & 0x01) PORTB |= (1 << PB3);
-	else PORTB &= ~(1 << PB3);
-	if (datos & 0x02) PORTB |= (1 << PB4);
-	else PORTB &= ~(1 << PB4);
-	if (datos & 0x04) PORTB |= (1 << PB5);
-	else PORTB &= ~(1 << PB5);
-	if (datos & 0x08) PORTD |= (1 << PD4);
-	else PORTD &= ~(1 << PD4);
-	PORTB |= (1 << PB2);
+
+// ================= LCD POR I2C =================
+
+void TWI_inicializar(void)
+{
+	// Frecuencia I2C de 100 kHz con F_CPU = 16 MHz
+	TWSR = 0x00;
+	TWBR = 72;
+	TWCR = (1 << TWEN);
+}
+
+void TWI_escribir(unsigned char dato)
+{
+	// Generar condicion START
+	TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWEN);
+	while (!(TWCR & (1 << TWINT)));
+
+	// Direccion I2C 0x27 en modo escritura
+	TWDR = 0x4E;
+	TWCR = (1 << TWINT) | (1 << TWEN);
+	while (!(TWCR & (1 << TWINT)));
+
+	// Enviar dato al adaptador
+	TWDR = dato;
+	TWCR = (1 << TWINT) | (1 << TWEN);
+	while (!(TWCR & (1 << TWINT)));
+
+	// Generar condicion STOP
+	TWCR = (1 << TWINT) | (1 << TWSTO) | (1 << TWEN);
+
+	_delay_us(10);
+}
+
+void LCD_enviar_nibble(unsigned char datos, unsigned char rs)
+{
+	// PCF8574:
+	// P0 = RS, P1 = RW, P2 = Enable, P3 = luz de fondo
+	// P4-P7 = datos del LCD
+
+	unsigned char salida = (datos << 4) | 0x08;
+
+	if (rs)
+	{
+		salida |= 0x01;
+	}
+
+	// Activar Enable
+	TWI_escribir(salida | 0x04);
 	_delay_us(1);
-	PORTB &= ~(1 << PB2);
-	_delay_us(100);
 
+	// Desactivar Enable
+	TWI_escribir(salida);
+	_delay_us(50);
 }
 
-void LCD_comando(unsigned char comando) {
-	PORTB &= ~(1 << PB0);
-	LCD_nibble(comando >> 4);
-	LCD_nibble(comando & 0x0F);
-	_delay_ms(2);
-
+void LCD_enviar_byte(unsigned char dato, unsigned char rs)
+{
+	LCD_enviar_nibble(dato >> 4, rs);
+	LCD_enviar_nibble(dato & 0x0F, rs);
 }
 
-void LCD_caracter(char caracter) {
-	PORTB |= (1 << PB0);
-	LCD_nibble(caracter >> 4);
-	LCD_nibble(caracter & 0x0F);
-	_delay_us(100);
+void LCD_comando(unsigned char comando)
+{
+	LCD_enviar_byte(comando, 0);
 
+	if (comando == 0x01 || comando == 0x02)
+	{
+		_delay_ms(2);
+	}
 }
 
-void LCD_texto(const char *texto) {
-	while (*texto) {
+void LCD_caracter(char caracter)
+{
+	LCD_enviar_byte((unsigned char)caracter, 1);
+}
+
+void LCD_texto(const char *texto)
+{
+	while (*texto)
+	{
 		LCD_caracter(*texto);
 		texto++;
 	}
+}
 
-}
-void LCD_inicializar(void) {
-	_delay_ms(20);
-	LCD_nibble(0x03);
+void LCD_inicializar(void)
+{
+	TWI_inicializar();
+
+	_delay_ms(50);
+
+	// Inicializacion del LCD en modo de 4 bits
+	LCD_enviar_nibble(0x03, 0);
 	_delay_ms(5);
-	LCD_nibble(0x03);
+
+	LCD_enviar_nibble(0x03, 0);
 	_delay_us(150);
-	LCD_nibble(0x03);
-	LCD_nibble(0x02);
-	LCD_comando(0x28);
-	LCD_comando(0x0C);
-	LCD_comando(0x01);
-	_delay_ms(2);
+
+	LCD_enviar_nibble(0x03, 0);
+	_delay_us(150);
+
+	LCD_enviar_nibble(0x02, 0);
+	_delay_us(150);
+
+	LCD_comando(0x28); // 2 lineas, modo de 4 bits
+	LCD_comando(0x0C); // Pantalla encendida, cursor apagado
+	LCD_comando(0x01); // Limpiar pantalla
+	LCD_comando(0x06); // Avanzar cursor
 }
+
+// ================= COMUNICACION USART =================
 
 void USART_init(unsigned int baud)
 {
@@ -369,6 +435,7 @@ void USART_transmit(unsigned char dato)
 unsigned char USART_receive(void)
 {
 	while (!(UCSR0A & (1 << RXC0)));
+
 	return UDR0;
 }
 
@@ -381,6 +448,7 @@ void USART_sendString(const char *texto)
 	}
 }
 
+// ================= REPRODUCCION DE CANCIONES =================
 
 void reproducir(const uint8_t *cancion,
 const uint8_t *bajo,
@@ -427,11 +495,10 @@ uint8_t cantidad)
 	LCD_texto("MODO PIANO");
 }
 
-
 void reproducir_cancion1(void)
 {
 	LCD_comando(0x01);
-	LCD_texto("ODA ALEGRIA");
+	LCD_texto("SEVEN NATION");
 
 	reproducir(cancion1, bajo1, sizeof(cancion1));
 }
@@ -439,25 +506,29 @@ void reproducir_cancion1(void)
 void reproducir_cancion2(void)
 {
 	LCD_comando(0x01);
-	LCD_texto("ESTRELLITA");
+	LCD_texto("SHAPE OF YOU");
 
-	reproducir(cancion2, bajo2,  sizeof(cancion2));
+	reproducir(cancion2, bajo2, sizeof(cancion2));
 }
 
 void reproducir_cancion3(void)
 {
 	LCD_comando(0x01);
-	LCD_texto("MARY LAMB");
+	LCD_texto("BAD ROMANCE");
 
 	reproducir(cancion3, bajo3, sizeof(cancion3));
 }
 
-void delay_us_var(unsigned int us) {
-	while (us > 0) {
+void delay_us_var(unsigned int us)
+{
+	while (us > 0)
+	{
 		_delay_us(1);
 		us--;
 	}
 }
+
+// ================= TIMER1 =================
 
 void Timer1_inicializar(void)
 {
