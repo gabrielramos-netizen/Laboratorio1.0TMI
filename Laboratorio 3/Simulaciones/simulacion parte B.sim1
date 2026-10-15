@@ -1,0 +1,63 @@
+<circuit version="1.1.0-SR2" rev="260312" stepSize="1000000" stepsPS="1000000" NLsteps="100000" reaStep="1000000" animate="0" >
+
+<item itemtype="Subcircuit" CircId="L298P-1" mainComp="false" Show_id="true" Show_Val="false" Pos="-400,4" rotation="0" hflip="1" vflip="1" label="L298P-1" idLabPos="0,-20" labelrot="0" valLabPos="-16,20" valLabRot="0" Input_High_V="2.5 V" Input_Low_V="2.5 V" Input_Imped="1e+09 Ω" Out_High_V="5 V" Out_Low_V="0 V" Out_Imped="40 Ω" Tpd_ps="10 ns" Tr_ps="3 ns" Tf_ps="4 ns" Logic_Symbol="true" />
+
+<item itemtype="Subcircuit" CircId="Uno-2" mainComp="false" Show_id="true" Show_Val="false" Pos="-388,108" rotation="0" hflip="1" vflip="1" label="Uno-2" idLabPos="0,-20" labelrot="0" valLabPos="-16,20" valLabRot="0" Logic_Symbol="false">
+<mainCompProps MainCompId="mega328-109" Frequency="16 MHz" Program="../../Mecatronica/4to semestre/Tecnologías de microprocesamiento/Laboratorio/lab3/Parte B/Parte B/Debug/Parte B.hex" Auto_Load="false" saveEepr="true" MainMcu="true" SerialMon="-1" />
+</item>
+
+<item itemtype="LDR" CircId="LDR-3" mainComp="false" Show_id="false" Show_Val="false" Pos="-164,292" rotation="0" hflip="1" vflip="1" label="LDR-3" idLabPos="-16,-24" labelrot="0" valLabPos="-16,30" valLabRot="0" Lux="36.828 Lux" Min_Lux="0 Lux" Max_Lux="1023 Lux" Dial_Step="0 Lux" Gamma="0.8582" R1="127410 Ω" Slider="false" Scale="1" />
+
+<item itemtype="Potentiometer" CircId="Potentiometer-4" mainComp="false" ShowProp="Resistance" Show_id="false" Show_Val="true" Pos="-56,204" rotation="270" hflip="1" vflip="1" label="Potentiometer-4" idLabPos="-16,-40" labelrot="0" valLabPos="-8.68046,-8.15977" valLabRot="0" Resistance="1 kΩ" Value_Ohm="417 Ω" Slider="false" Scale="1" />
+
+<item itemtype="Resistor" CircId="Resistor-5" mainComp="false" ShowProp="Resistance" Show_id="false" Show_Val="true" Pos="-120,256" rotation="90" hflip="1" vflip="1" label="Resistor-5" idLabPos="-16,-24" labelrot="0" valLabPos="-10.7521,-8.19867" valLabRot="0" Resistance="10 kΩ" />
+
+<item itemtype="DcMotor" CircId="DcMotor-6" mainComp="false" Show_id="true" Show_Val="false" Pos="-212,-72" rotation="0" hflip="1" vflip="1" label="DcMotor-6" idLabPos="-22,-48" labelrot="0" valLabPos="-14,36" valLabRot="0" RPM_Nominal="60 _RPM" Volt_Nominal="5 V" Resistance="100 Ω" />
+
+<item itemtype="Voltage Source" CircId="Voltage Source-7" mainComp="false" ShowProp="MaxValue" Show_id="false" Show_Val="true" Pos="-128,-76" rotation="0" hflip="1" vflip="1" label="Voltage Source-7" idLabPos="-32,-48" labelrot="0" valLabPos="-8,30" valLabRot="0" Running="true" Value_Volt="12 V" MaxValue="12 V" MinValue="0 V" />
+
+<item itemtype="Node" CircId="Node-10" mainComp="false" Pos="-184,188" />
+
+<item itemtype="Node" CircId="Node-11" mainComp="false" Pos="-180,224" />
+
+<item itemtype="Node" CircId="Node-12" mainComp="false" Pos="-148,272" />
+
+<item itemtype="Node" CircId="Node-13" mainComp="false" Pos="-120,188" />
+
+<item itemtype="Connector" uid="Connector-1" startpinid="Uno-2-2" endpinid="L298P-1-IN1" pointList="-380,140,-452,140,-452,12,-408,12" />
+
+<item itemtype="Connector" uid="Connector-2" startpinid="Uno-2-3" endpinid="L298P-1-IN2" pointList="-380,148,-436,148,-436,20,-408,20" />
+
+<item itemtype="Connector" uid="Connector-3" startpinid="Uno-2-9" endpinid="L298P-1-EnA" pointList="-380,204,-444,204,-444,52,-408,52" />
+
+<item itemtype="Connector" uid="Connector-5" startpinid="Voltage Source-7-outPin" endpinid="L298P-1-Vs" pointList="-100,-60,-100,52,-360,52" />
+
+<item itemtype="Connector" uid="Connector-6" startpinid="DcMotor-6-lPin" endpinid="L298P-1-OUT1" pointList="-252,-72,-252,12,-360,12" />
+
+<item itemtype="Connector" uid="Connector-7" startpinid="DcMotor-6-rPin" endpinid="L298P-1-OUT2" pointList="-172,-72,-172,20,-360,20" />
+
+<item itemtype="Connector" uid="Connector-21" startpinid="L298P-1-SenA" endpinid="Node-10-0" pointList="-360,60,-184,60,-184,188" />
+
+<item itemtype="Connector" uid="Connector-22" startpinid="Node-10-2" endpinid="Uno-2-GND0" pointList="-184,188,-236,188" />
+
+<item itemtype="Connector" uid="Connector-23" startpinid="Potentiometer-4-PinM" endpinid="Uno-2-A1" pointList="-40,204,-40,156,-236,156" />
+
+<item itemtype="Connector" uid="Connector-24" startpinid="LDR-3-lPin" endpinid="Node-11-1" pointList="-180,292,-180,224" />
+
+<item itemtype="Connector" uid="Connector-25" startpinid="Uno-2-5V0" endpinid="Node-11-0" pointList="-236,204,-180,204,-180,224" />
+
+<item itemtype="Connector" uid="Connector-26" startpinid="Node-11-2" endpinid="Potentiometer-4-PinA" pointList="-180,224,-56,224,-56,220" />
+
+<item itemtype="Connector" uid="Connector-28" startpinid="Resistor-5-rPin" endpinid="Node-12-1" pointList="-120,272,-148,272" />
+
+<item itemtype="Connector" uid="Connector-29" startpinid="LDR-3-rPin" endpinid="Node-12-0" pointList="-148,292,-148,272" />
+
+<item itemtype="Connector" uid="Connector-33" startpinid="Node-13-2" endpinid="Node-10-1" pointList="-120,188,-184,188" />
+
+<item itemtype="Connector" uid="Connector-31" startpinid="Resistor-5-lPin" endpinid="Node-13-1" pointList="-120,240,-120,188" />
+
+<item itemtype="Connector" uid="Connector-32" startpinid="Potentiometer-4-PinB" endpinid="Node-13-0" pointList="-56,188,-120,188" />
+
+<item itemtype="Connector" uid="Connector-30" startpinid="Node-12-2" endpinid="Uno-2-A0" pointList="-148,272,-148,164,-236,164" />
+
+</circuit>
