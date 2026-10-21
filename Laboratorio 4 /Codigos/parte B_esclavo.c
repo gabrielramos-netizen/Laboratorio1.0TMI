@@ -1,8 +1,40 @@
 #define F_CPU 16000000UL
 #include <avr/io.h>
 #include <util/delay.h>
+#include <avr/interrupt.h>
 
 #include "SPI.h"
+
+#define CMD_ESTADO    0x01
+#define CMD_VELOCIDAD 0x02
+
+volatile uint8_t cmd_recibido = 0;
+volatile uint8_t val_recibido = 0;
+volatile uint8_t byte_estado = 0;
+volatile uint8_t flag_comando = 0;
+
+uint8_t estado_sistema = 0;
+
+// Interrupción para recepción de datos por SPI
+ISR(SPI_STC_vect) {
+    uint8_t dato = SPDR;
+    
+    if (byte_estado == 0) {
+        cmd_recibido = dato;
+        byte_estado = 1;
+    } else {
+        val_recibido = dato;
+        byte_estado = 0;
+        flag_comando = 1;
+    }
+}
+
+// Inicialización del módulo SPI en modo esclavo
+void spi_esclavo_init(void) {
+    DDRB |= (1 << PB4); // MISO como salida
+    DDRB &= ~((1 << PB2) | (1 << PB3) | (1 << PB5));
+    SPCR = (1 << SPE) | (1 << SPIE);
+}
 
 // Configuración de Timer0 para PWM de motor (PD6)
 void timer0_init(void) {
@@ -32,8 +64,34 @@ int main(void) {
 
     timer0_init();
     timer1_init();
+    spi_esclavo_init();
+
+    sei(); // Habilitación de interrupciones globales
 
     while (1) {
-        _delay_ms(100);
+        if (flag_comando) {
+            flag_comando = 0;
+            
+            switch (cmd_recibido) {
+                case CMD_ESTADO:
+                    if (val_recibido == 1) {
+                        estado_sistema = 1;
+                        PORTD |= (1 << PD7);  // LED verde
+                        PORTD &= ~(1 << PD4);
+                    } else {
+                        estado_sistema = 0;
+                        PORTD &= ~(1 << PD7);
+                        PORTD |= (1 << PD4);  // LED rojo
+                        OCR0A = 0;
+                    }
+                    break;
+                    
+                case CMD_VELOCIDAD:
+                    if (estado_sistema == 1) {
+                        OCR0A = val_recibido; // Actualización de velocidad del motor
+                    }
+                    break;
+            }
+        }
     }
 }
