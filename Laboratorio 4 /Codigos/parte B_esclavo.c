@@ -7,6 +7,8 @@
 
 #define CMD_ESTADO    0x01
 #define CMD_VELOCIDAD 0x02
+#define CMD_PISTON    0x03
+#define CMD_EMERG     0x04
 
 volatile uint8_t cmd_recibido = 0;
 volatile uint8_t val_recibido = 0;
@@ -53,6 +55,17 @@ void timer1_init(void) {
     OCR1A = 2000; // Reposo
 }
 
+// Rutina de movimiento del pistón y activación del buzzer
+void accionar_piston(void) {
+    PORTD |= (1 << PD3);
+    _delay_ms(50);
+    PORTD &= ~(1 << PD3);
+    
+    OCR1A = 3200; // Desplazamiento del servo
+    _delay_ms(300);
+    OCR1A = 2000; // Retorno a posición de reposo
+}
+
 int main(void) {
     // Configuración de LEDs (PD7 verde, PD4 rojo) y Buzzer (PD3)
     DDRD |= (1 << PD7) | (1 << PD4) | (1 << PD3);
@@ -91,7 +104,28 @@ int main(void) {
                         OCR0A = val_recibido; // Actualización de velocidad del motor
                     }
                     break;
+                    
+                case CMD_PISTON:
+                    if (estado_sistema == 1) {
+                        accionar_piston();
+                    }
+                    break;
+                    
+                case CMD_EMERG:
+                    estado_sistema = 2;
+                    OCR0A = 0;
+                    PORTD &= ~(1 << PD7);
+                    break;
             }
+        }
+        
+        // Alarma visual y sonora en estado de emergencia
+        if (estado_sistema == 2) {
+            PORTD ^= (1 << PD4);
+            PORTD |= (1 << PD3);
+            _delay_ms(150);
+            PORTD &= ~(1 << PD3);
+            _delay_ms(150);
         }
     }
 }
