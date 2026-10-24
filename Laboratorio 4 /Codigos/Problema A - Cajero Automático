@@ -364,3 +364,97 @@ uint16_t leer_monto(void)
     }
 }
 
+/* 
+   ALMACENAMIENTO PERSISTENTE
+    */
+
+void guardar_cuenta(uint8_t indice)
+{
+    eeprom_update_block(
+        &cuentas[indice],
+        &cuentas_eeprom[indice],
+        sizeof(Cuenta)
+    );
+}
+
+void cargar_cuentas(void)
+{
+    eeprom_read_block(
+        cuentas,
+        cuentas_eeprom,
+        sizeof(cuentas)
+    );
+}
+
+uint8_t uid_duplicado(const uint8_t uid[4], uint8_t cantidad)
+{
+    for (uint8_t i = 0; i < cantidad; i++)
+    {
+        if (uid_igual(uid, cuentas[i].uid))
+            return 1;
+    }
+
+    return 0;
+}
+
+/* 
+   REGISTRO INICIAL DE LAS TRES CUENTAS
+    */
+
+void configurar_cuentas(void)
+{
+    uint8_t uid[4];
+    uint8_t pin[4];
+
+    for (uint8_t i = 0; i < NUM_CUENTAS; i++)
+    {
+        char linea[17];
+
+        snprintf(linea, sizeof(linea), "Registrar %u/3", i + 1);
+
+        while (1)
+        {
+            lcd_mensaje(linea, "Acerque tarjeta");
+
+            while (!leer_uid(uid))
+            {
+                _delay_ms(200);
+            }
+
+            if (uid_duplicado(uid, i))
+            {
+                lcd_mensaje("Tarjeta repetida", "Use otra tarjeta");
+                indicar_error();
+                esperar_retirar_tarjeta();
+                continue;
+            }
+
+            esperar_retirar_tarjeta();
+            break;
+        }
+
+        for (uint8_t j = 0; j < 4; j++)
+            cuentas[i].uid[j] = uid[j];
+
+        lcd_mensaje("Defina PIN", "Use 4 digitos");
+        leer_pin(pin);
+
+        for (uint8_t j = 0; j < 4; j++)
+            cuentas[i].pin[j] = pin[j];
+
+        cuentas[i].saldo = SALDO_INICIAL;
+
+        guardar_cuenta(i);
+
+        lcd_mensaje("Cuenta guardada", "Correctamente");
+        indicar_exito();
+        _delay_ms(1000);
+    }
+
+    // Se escribe la marca al final, una vez registradas
+    // las tres cuentas.
+    eeprom_update_byte(&marca_eeprom, MARCA_VALIDACION);
+
+    lcd_mensaje("Registro listo", "Cajero iniciado");
+    _delay_ms(1500);
+}
