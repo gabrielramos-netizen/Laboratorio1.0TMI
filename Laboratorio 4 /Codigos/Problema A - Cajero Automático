@@ -458,3 +458,154 @@ void configurar_cuentas(void)
     lcd_mensaje("Registro listo", "Cajero iniciado");
     _delay_ms(1500);
 }
+
+/* 
+   AUTENTICACION
+    */
+
+uint8_t autenticar(uint8_t indice)
+{
+    uint8_t ingresado[4];
+
+    for (uint8_t intento = 0; intento < 3; intento++)
+    {
+        char linea[17];
+
+        snprintf(linea, sizeof(linea), "Intento %u de 3", intento + 1);
+        lcd_mensaje(linea, "Ingrese PIN");
+
+        leer_pin(ingresado);
+
+        if (pin_correcto(ingresado, cuentas[indice].pin))
+        {
+            lcd_mensaje("PIN correcto", "Bienvenido");
+            indicar_exito();
+            _delay_ms(1000);
+            return 1;
+        }
+
+        lcd_mensaje("PIN incorrecto", "Intente otra vez");
+        indicar_error();
+        _delay_ms(1000);
+    }
+
+    lcd_mensaje("Acceso bloqueado", "3 errores PIN");
+    indicar_bloqueo();
+    _delay_ms(1000);
+
+    return 0;
+}
+
+
+/* 
+   OPERACIONES BANCARIAS
+    */
+
+void consultar_saldo(uint8_t indice)
+{
+    char linea[17];
+
+    snprintf(linea, sizeof(linea), "Saldo: %u", cuentas[indice].saldo);
+
+    lcd_mensaje("Saldo disponible", linea);
+    _delay_ms(2000);
+}
+
+void depositar(uint8_t indice)
+{
+    uint16_t monto = leer_monto();
+
+    if (monto == 0)
+    {
+        lcd_mensaje("Monto invalido", "Operacion cancel.");
+        indicar_error();
+        _delay_ms(1200);
+        return;
+    }
+
+    uint32_t nuevo_saldo = (uint32_t)cuentas[indice].saldo + monto;
+
+    if (nuevo_saldo > 65535UL)
+    {
+        lcd_mensaje("Monto excesivo", "No se deposito");
+        indicar_error();
+        _delay_ms(1200);
+        return;
+    }
+
+    cuentas[indice].saldo = (uint16_t)nuevo_saldo;
+    guardar_cuenta(indice);
+
+    lcd_mensaje("Deposito correcto", "Saldo actualizado");
+    indicar_exito();
+    _delay_ms(1500);
+}
+
+void retirar(uint8_t indice)
+{
+    uint16_t monto = leer_monto();
+
+    if (monto == 0)
+    {
+        lcd_mensaje("Monto invalido", "Operacion cancel.");
+        indicar_error();
+        _delay_ms(1200);
+        return;
+    }
+
+    if (monto > cuentas[indice].saldo)
+    {
+        lcd_mensaje("Saldo insufic.", "Retiro rechazado");
+        indicar_error();
+        _delay_ms(1500);
+        return;
+    }
+
+    cuentas[indice].saldo -= monto;
+    guardar_cuenta(indice);
+
+    lcd_mensaje("Retiro correcto", "Saldo actualizado");
+    indicar_exito();
+    _delay_ms(1500);
+}
+
+
+/* 
+   MENU PRINCIPAL DE LA CUENTA
+    */
+
+void menu_cuenta(uint8_t indice)
+{
+    uint8_t salir = 0;
+
+    while (!salir)
+    {
+        lcd_mensaje("A:Saldo B:Retiro", "C:Deposito D:Fin");
+
+        char tecla = teclado_leer();
+
+        switch (tecla)
+        {
+            case 'A':
+                consultar_saldo(indice);
+                break;
+
+            case 'B':
+                retirar(indice);
+                break;
+
+            case 'C':
+                depositar(indice);
+                break;
+
+            case 'D':
+                salir = 1;
+                lcd_mensaje("Sesion finalizada", "Retire tarjeta");
+                _delay_ms(1000);
+                break;
+
+            default:
+                break;
+        }
+    }
+}
