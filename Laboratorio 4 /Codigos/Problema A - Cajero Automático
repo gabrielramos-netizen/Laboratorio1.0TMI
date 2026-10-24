@@ -207,3 +207,160 @@ void indicar_bloqueo(void)
     buzzer_tono(1500);
     PORTD &= ~(1 << PD6);
 }
+
+/* 
+   LECTOR RFID
+    */
+
+uint8_t leer_uid(uint8_t uid[4])
+{
+    // La libreria del profesor puede escribir hasta 16 bytes
+    // al producirse una lectura o un timeout.
+    uint8_t datos[16] = {0};
+
+    mfrc522_standard(datos);
+
+    uint8_t hay_datos = 0;
+
+    for (uint8_t i = 0; i < 4; i++)
+    {
+        uid[i] = datos[i];
+
+        if (datos[i] != 0)
+            hay_datos = 1;
+    }
+
+    return hay_datos;
+}
+
+uint8_t uid_igual(const uint8_t a[4], const uint8_t b[4])
+{
+    for (uint8_t i = 0; i < 4; i++)
+    {
+        if (a[i] != b[i])
+            return 0;
+    }
+
+    return 1;
+}
+
+int8_t buscar_cuenta(const uint8_t uid[4])
+{
+    for (uint8_t i = 0; i < NUM_CUENTAS; i++)
+    {
+        if (uid_igual(uid, cuentas[i].uid))
+            return (int8_t)i;
+    }
+
+    return -1;
+}
+
+void esperar_retirar_tarjeta(void)
+{
+    uint8_t uid[4];
+
+    lcd_mensaje("Retire tarjeta", "Por favor");
+
+    while (leer_uid(uid))
+    {
+        _delay_ms(200);
+    }
+
+    _delay_ms(300);
+}
+
+
+/* 
+   TECLADO: PIN Y MONTO
+    */
+
+void leer_pin(uint8_t pin[4])
+{
+    uint8_t cantidad = 0;
+    char texto[17];
+
+    lcd_mensaje("Ingrese PIN", "");
+
+    while (cantidad < 4)
+    {
+        char tecla = teclado_leer();
+
+        if (tecla >= '0' && tecla <= '9')
+        {
+            pin[cantidad] = tecla - '0';
+            cantidad++;
+        }
+        else if (tecla == '*')
+        {
+            cantidad = 0;
+        }
+
+        strcpy(texto, "PIN: ");
+
+        for (uint8_t i = 0; i < cantidad; i++)
+            texto[5 + i] = '*';
+
+        texto[5 + cantidad] = '\0';
+
+        lcd_linea(1, texto);
+    }
+}
+
+uint8_t pin_correcto(uint8_t ingresado[4], uint8_t guardado[4])
+{
+    for (uint8_t i = 0; i < 4; i++)
+    {
+        if (ingresado[i] != guardado[i])
+            return 0;
+    }
+
+    return 1;
+}
+
+uint16_t leer_monto(void)
+{
+    char buffer[6] = "";
+    uint8_t cantidad = 0;
+
+    lcd_mensaje("Monto #=OK *=BOR", "");
+
+    while (1)
+    {
+        char tecla = teclado_leer();
+
+        if (tecla >= '0' && tecla <= '9' && cantidad < 5)
+        {
+            buffer[cantidad] = tecla;
+            cantidad++;
+            buffer[cantidad] = '\0';
+        }
+        else if (tecla == '*')
+        {
+            if (cantidad > 0)
+            {
+                cantidad--;
+                buffer[cantidad] = '\0';
+            }
+        }
+        else if (tecla == '#')
+        {
+            if (cantidad == 0)
+                return 0;
+
+            uint32_t valor = 0;
+
+            for (uint8_t i = 0; i < cantidad; i++)
+            {
+                valor = valor * 10 + (buffer[i] - '0');
+            }
+
+            if (valor > 65535UL)
+                return 0;
+
+            return (uint16_t)valor;
+        }
+
+        lcd_linea(1, buffer);
+    }
+}
+
