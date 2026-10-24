@@ -98,3 +98,112 @@ void lcd_mensaje(const char *linea1, const char *linea2)
     lcd_linea(0, linea1);
     lcd_linea(1, linea2);
 }
+
+
+/* 
+   TECLADO 4x4
+ */
+
+void teclado_inicializar(void)
+{
+    // PC0-PC3 como salidas para las filas.
+    // Se preservan PC4-PC7, incluidos SDA y SCL.
+    DDRC = (DDRC & 0xF0) | 0x0F;
+    PORTC = (PORTC & 0xF0) | 0x0F;
+
+    // PD2-PD5 como entradas con pull-up.
+    DDRD &= ~0x3C;
+    PORTD |= 0x3C;
+}
+
+char teclado_escanear(void)
+{
+    for (uint8_t fila = 0; fila < 4; fila++)
+    {
+        // Todas las filas quedan inicialmente en alto.
+        PORTC = (PORTC & 0xF0) | 0x0F;
+
+        // Activar una fila llevandola a nivel bajo.
+        PORTC &= ~(1 << fila);
+
+        _delay_us(5);
+
+        for (uint8_t columna = 0; columna < 4; columna++)
+        {
+            if (!(PIND & (1 << (PD2 + columna))))
+            {
+                return mapa_teclado[fila][columna];
+            }
+        }
+    }
+
+    return 0;
+}
+
+char teclado_leer(void)
+{
+    char tecla = 0;
+
+    while (tecla == 0)
+    {
+        tecla = teclado_escanear();
+        _delay_ms(15);
+    }
+
+    // Antirrebote y espera a que se suelte la tecla.
+    _delay_ms(20);
+
+    while (teclado_escanear() != 0)
+    {
+        _delay_ms(10);
+    }
+
+    return tecla;
+}
+
+
+/* 
+   LEDS Y BUZZER
+    */
+
+void indicadores_inicializar(void)
+{
+    DDRB |= (1 << PB0);
+    PORTB &= ~(1 << PB0);
+
+    DDRD |= (1 << PD6) | (1 << PD7);
+    PORTD &= ~((1 << PD6) | (1 << PD7));
+}
+
+void buzzer_tono(uint16_t duracion_ms)
+{
+    // Aproximadamente 2 kHz para un buzzer pasivo.
+    for (uint32_t i = 0; i < (uint32_t)duracion_ms * 4; i++)
+    {
+        PORTD ^= (1 << PD7);
+        _delay_us(250);
+    }
+
+    PORTD &= ~(1 << PD7);
+}
+
+void indicar_exito(void)
+{
+    PORTB |= (1 << PB0);
+    buzzer_tono(70);
+    PORTB &= ~(1 << PB0);
+}
+
+void indicar_error(void)
+{
+    PORTD |= (1 << PD6);
+    buzzer_tono(150);
+    PORTD &= ~(1 << PD6);
+}
+
+void indicar_bloqueo(void)
+{
+    PORTD |= (1 << PD6);
+    buzzer_tono(1500);
+    PORTD &= ~(1 << PD6);
+}
