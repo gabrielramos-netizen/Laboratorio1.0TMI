@@ -36,6 +36,7 @@ Cuenta cuentas[NUM_CUENTAS];
 
 Cuenta EEMEM cuentas_eeprom[NUM_CUENTAS];
 uint8_t EEMEM marca_eeprom;
+/* 
 
    PINES
 
@@ -59,3 +60,41 @@ const char mapa_teclado[4][4] =
     {'7', '8', '9', 'C'},
     {'*', '0', '#', 'D'}
 };
+
+
+/*
+   FUNCIONES DE LCD
+ */
+
+void lcd_posicion(uint8_t fila, uint8_t columna)
+{
+    if (fila == 0)
+        twi_lcd_cmd(0x80 + columna);
+    else
+        twi_lcd_cmd(0xC0 + columna);
+}
+
+void lcd_linea(uint8_t fila, const char *texto)
+{
+    uint8_t i = 0;
+
+    lcd_posicion(fila, 0);
+
+    while (texto[i] != '\0' && i < 16)
+    {
+        twi_lcd_dwr(texto[i]);
+        i++;
+    }
+
+    while (i < 16)
+    {
+        twi_lcd_dwr(' ');
+        i++;
+    }
+}
+
+void lcd_mensaje(const char *linea1, const char *linea2)
+{
+    lcd_linea(0, linea1);
+    lcd_linea(1, linea2);
+}
