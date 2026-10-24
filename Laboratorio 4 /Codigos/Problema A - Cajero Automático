@@ -609,3 +609,91 @@ void menu_cuenta(uint8_t indice)
         }
     }
 }
+
+
+/* 
+   PROGRAMA PRINCIPAL
+    */
+
+int main(void)
+{
+    uint8_t uid[4];
+
+    // Inicializar UART a 9600 baudios.
+    uart_init(103);
+
+    // Inicializar SPI y seleccionar el RC522.
+    spi_init();
+
+    DDRB |= (1 << PB2);
+    PORTB |= (1 << PB2);
+
+    mfrc522_resetPinInit();
+    mfrc522_init();
+
+    // Inicializar TWI y LCD.
+    twi_init();
+    twi_lcd_init();
+
+    // Configurar teclado e indicadores DESPUES de inicializar
+    // la pantalla, para configurar PC0-PC3 como filas.
+    teclado_inicializar();
+    indicadores_inicializar();
+
+    lcd_mensaje("Cajero automatico", "Iniciando...");
+    _delay_ms(1000);
+
+    // Comprobar si ya se registraron las cuentas.
+    if (eeprom_read_byte(&marca_eeprom) != MARCA_VALIDACION)
+    {
+        configurar_cuentas();
+    }
+    else
+    {
+        cargar_cuentas();
+        lcd_mensaje("Cuentas cargadas", "Acerque tarjeta");
+        _delay_ms(1200);
+    }
+
+    while (1)
+    {
+        int8_t indice;
+
+        lcd_mensaje("Cajero listo", "Acerque tarjeta");
+
+        // Esperar una tarjeta RFID.
+        while (!leer_uid(uid))
+        {
+            _delay_ms(200);
+        }
+
+        // Buscar la cuenta asociada al UID.
+        indice = buscar_cuenta(uid);
+
+        if (indice < 0)
+        {
+            lcd_mensaje("Tarjeta no valida", "Acceso denegado");
+            indicar_error();
+            _delay_ms(1200);
+            esperar_retirar_tarjeta();
+            continue;
+        }
+
+        lcd_mensaje("Tarjeta valida", "Retire tarjeta");
+        esperar_retirar_tarjeta();
+
+        // Solicitar PIN y permitir hasta tres intentos.
+        if (!autenticar((uint8_t)indice))
+        {
+            esperar_retirar_tarjeta();
+            continue;
+        }
+
+        // Entrar al menu de operaciones.
+        menu_cuenta((uint8_t)indice);
+
+        // Evitar iniciar otra sesion con la misma tarjeta
+        // si el usuario no la ha retirado.
+        esperar_retirar_tarjeta();
+    }
+}
