@@ -1,1 +1,17 @@
+#define F_CPU 16000000UL
 
+// Direccion I2C de ejemplo del expansor PCF8574.
+// Si la pantalla no responde, verificar si usa 0x27 o 0x3F.
+#define PCF8574 0x27
+
+#include <avr/io.h>
+#include <avr/eeprom.h>
+#include <util/delay.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "SPI.h"
+#include "UART.h"
+#include "RC522.h"
+#include "TWI_LCD.H"
