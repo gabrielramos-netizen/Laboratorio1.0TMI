@@ -43,6 +43,18 @@ typedef struct
 
 Elemento secuencia[MAX_SECUENCIA];
 
+/* Matriz LED monocromatica 8x8 */
+volatile uint8_t imagen[8][8] = {{0}};
+volatile uint8_t fila_actual = 0;
+
+const uint8_t pines_filas[8] = {
+	4, 5, 6, 7, 8, 9, 10, 11
+};
+
+const uint8_t pines_columnas[8] = {
+	12, 13, 16, 17, 18, 19, 0, 1
+};
+
 uint8_t nivel = 1;
 uint8_t record = 0;
 uint8_t longitud = 1;
@@ -86,6 +98,10 @@ void guardar_record(void);
 void cargar_record(void);
 
 uint8_t boton_presionado(void);
+
+void pin_salida(uint8_t pin);
+void pin_escribir(uint8_t pin, uint8_t valor);
+void matriz_refrescar_fila(void);
 
 //main
 
@@ -506,30 +522,90 @@ void guardar_record(void)
  * Las implementaremos cuando sepamos el modelo exacto.
  */
 
+/* Matriz 8x8: filas activas en LOW y columnas en HIGH */
+
 void matriz_inicializar(void)
 {
-    /* Pendiente */
+	uint8_t i;
+
+	for (i = 0; i < 8; i++)
+	{
+		pin_salida(pines_filas[i]);
+		pin_salida(pines_columnas[i]);
+
+		/* Apagar filas y columnas al iniciar */
+		pin_escribir(pines_filas[i], 1);
+		pin_escribir(pines_columnas[i], 0);
+	}
+
+	/* Timer2: interrupcion cada 1 ms */
+	TCCR2A = (1 << WGM21);
+	TCCR2B = (1 << CS22);
+	OCR2A = 249;
+	TIMSK2 = (1 << OCIE2A);
+
+	sei();
 }
 
 void matriz_limpiar(void)
 {
-    /* Pendiente */
+	uint8_t x, y;
+
+	for (y = 0; y < 8; y++)
+	{
+		for (x = 0; x < 8; x++)
+		{
+			imagen[y][x] = 0;
+		}
+	}
 }
 
 void matriz_pixel(uint8_t x, uint8_t y, uint8_t color)
 {
-    /* Pendiente */
-    (void)x;
-    (void)y;
-    (void)color;
+	(void)color;
+
+	if (x < 8 && y < 8)
+	{
+		imagen[y][x] = 1;
+	}
 }
 
 void matriz_actualizar_cursor(void)
 {
-    matriz_limpiar();
-    matriz_pixel(cursor_x, cursor_y, color_cursor);
+	matriz_limpiar();
+	matriz_pixel(cursor_x, cursor_y, color_cursor);
 }
 
+/* Refresco de una fila por interrupcion */
+ISR(TIMER2_COMPA_vect)
+{
+	uint8_t x;
+
+	/* Apagar todas las filas */
+	for (x = 0; x < 8; x++)
+	{
+		pin_escribir(pines_filas[x], 1);
+	}
+
+	/* Preparar las columnas de la fila actual */
+	for (x = 0; x < 8; x++)
+	{
+		pin_escribir(
+		pines_columnas[x],
+		imagen[fila_actual][x]
+		);
+	}
+
+	/* Activar solamente la fila actual */
+	pin_escribir(pines_filas[fila_actual], 0);
+
+	fila_actual++;
+
+	if (fila_actual >= 8)
+	{
+		fila_actual = 0;
+	}
+}
 void animacion_exito(void)
 {
     buzzer_tono(1000, 100);
@@ -551,4 +627,45 @@ void animacion_error(void)
     }
 
     matriz_limpiar();
+}
+
+void pin_salida(uint8_t pin)
+{
+	if (pin <= 7)
+	{
+		DDRD |= (1 << pin);
+	}
+	else if (pin <= 13)
+	{
+		DDRB |= (1 << (pin - 8));
+	}
+	else if (pin <= 19)
+	{
+		DDRC |= (1 << (pin - 14));
+	}
+}
+
+void pin_escribir(uint8_t pin, uint8_t valor)
+{
+	if (pin <= 7)
+	{
+		if (valor)
+		PORTD |= (1 << pin);
+		else
+		PORTD &= ~(1 << pin);
+	}
+	else if (pin <= 13)
+	{
+		if (valor)
+		PORTB |= (1 << (pin - 8));
+		else
+		PORTB &= ~(1 << (pin - 8));
+	}
+	else if (pin <= 19)
+	{
+		if (valor)
+		PORTC |= (1 << (pin - 14));
+		else
+		PORTC &= ~(1 << (pin - 14));
+	}
 }
