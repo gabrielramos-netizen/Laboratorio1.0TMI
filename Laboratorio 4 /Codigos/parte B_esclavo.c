@@ -3,129 +3,122 @@
 #include <util/delay.h>
 #include <avr/interrupt.h>
 
-#include "SPI.h"
-
+// Comandos SPI
 #define CMD_ESTADO    0x01
 #define CMD_VELOCIDAD 0x02
 #define CMD_PISTON    0x03
 #define CMD_EMERG     0x04
 
-volatile uint8_t cmd_recibido = 0;
-volatile uint8_t val_recibido = 0;
-volatile uint8_t byte_estado = 0;
-volatile uint8_t flag_comando = 0;
+// Definición de Salidas Digitales (LEDs)
+#define LED_ROJO    PD4  // Indicador PARO
+#define LED_VERDE   PD7  // Indicador MARCHA
+#define LED_MOTOR   PD6  // Reemplazo Motor Cinta
+#define LED_PISTON  PB1  // Reemplazo Servo Empujador (Pin D9)
+#define BUZZER      PD3  // Alarma/Pitido
 
-uint8_t estado_sistema = 0;
+volatile uint8_t spi_byte_count = 0;
+volatile uint8_t rx_cmd = 0;
+volatile uint8_t rx_val = 0;
+volatile uint8_t nueva_trama = 0;
 
-// Interrupción para recepción de datos por SPI
+uint8_t estado_actual = 0;
+
+// Resincronización SPI cuando SS vuelve a HIGH
+ISR(PCINT0_vect) {
+	if (PINB & (1 << PB2)) {
+		spi_byte_count = 0;
+	}
+}
+
+// Recepción SPI por Interrupción
 ISR(SPI_STC_vect) {
-    uint8_t dato = SPDR;
-    
-    if (byte_estado == 0) {
-        cmd_recibido = dato;
-        byte_estado = 1;
-    } else {
-        val_recibido = dato;
-        byte_estado = 0;
-        flag_comando = 1;
-    }
+	uint8_t data = SPDR;
+	if (spi_byte_count == 0) {
+		rx_cmd = data;
+		spi_byte_count = 1;
+		} else if (spi_byte_count == 1) {
+		rx_val = data;
+		spi_byte_count = 0;
+		nueva_trama = 1;
+	}
 }
 
-// Inicialización del módulo SPI en modo esclavo
-void spi_esclavo_init(void) {
-    DDRB |= (1 << PB4); // MISO como salida
-    DDRB &= ~((1 << PB2) | (1 << PB3) | (1 << PB5));
-    SPCR = (1 << SPE) | (1 << SPIE);
+void init_perifericos(void) {
+	DDRD |= (1 << LED_ROJO) | (1 << LED_VERDE) | (1 << LED_MOTOR) | (1 << BUZZER);
+	DDRB |= (1 << LED_PISTON);
+
+	// Secuencia de prueba al arrancar
+	for (uint8_t i = 0; i < 3; i++) {
+		PORTD |= (1 << LED_ROJO);
+		_delay_ms(150);
+		PORTD &= ~(1 << LED_ROJO);
+		_delay_ms(150);
+	}
+
+	PORTD |= (1 << LED_ROJO);
+	PORTD &= ~((1 << LED_VERDE) | (1 << LED_MOTOR) | (1 << BUZZER));
+	PORTB &= ~(1 << LED_PISTON);
 }
 
-// Configuración de Timer0 para PWM de motor (PD6)
-void timer0_init(void) {
-    DDRD |= (1 << PD6);
-    TCCR0A = (1 << WGM00) | (1 << WGM01) | (1 << COM0A1);
-    TCCR0B = (1 << CS01) | (1 << CS00);
-    OCR0A = 0;
+void spi_init_slave(void) {
+	DDRB |= (1 << PB4); // MISO salida
+	DDRB &= ~((1 << PB2) | (1 << PB3) | (1 << PB5)); // Entradas SPI
+
+	PCICR |= (1 << PCIE0);
+	PCMSK0 |= (1 << PCINT2);
+
+	SPCR = (1 << SPE) | (1 << SPIE);
+
+	sei();
 }
 
-// Configuración de Timer1 para servo del pistón (PB1)
-void timer1_init(void) {
-    DDRB |= (1 << PB1);
-    TCCR1A = (1 << WGM11) | (1 << COM1A1);
-    TCCR1B = (1 << WGM13) | (1 << WGM12) | (1 << CS11);
-    ICR1 = 39999;
-    OCR1A = 2000; // Reposo
-}
-
-// Rutina de movimiento del pistón y activación del buzzer
-void accionar_piston(void) {
-    PORTD |= (1 << PD3);
-    _delay_ms(50);
-    PORTD &= ~(1 << PD3);
-    
-    OCR1A = 3200; // Desplazamiento del servo
-    _delay_ms(300);
-    OCR1A = 2000; // Retorno a posición de reposo
+void disparar_piston(void) {
+	PORTB |= (1 << LED_PISTON);
+	PORTD |= (1 << BUZZER);
+	_delay_ms(400);
+	
+	PORTB &= ~(1 << LED_PISTON);
+	PORTD &= ~(1 << BUZZER);
 }
 
 int main(void) {
-    // Configuración de LEDs (PD7 verde, PD4 rojo) y Buzzer (PD3)
-    DDRD |= (1 << PD7) | (1 << PD4) | (1 << PD3);
+	init_perifericos();
+	spi_init_slave();
 
-    // Estado inicial: PARO
-    PORTD &= ~(1 << PD7);
-    PORTD |= (1 << PD4);
-    PORTD &= ~(1 << PD3);
+	while (1) {
+		if (nueva_trama) {
+			nueva_trama = 0;
 
-    timer0_init();
-    timer1_init();
-    spi_esclavo_init();
+			switch (rx_cmd) {
+				case CMD_ESTADO:
+				estado_actual = rx_val;
+				if (estado_actual == 0) { // PARO
+					PORTD |= (1 << LED_ROJO);
+					PORTD &= ~((1 << LED_VERDE) | (1 << LED_MOTOR));
+					} else if (estado_actual == 1) { // MARCHA
+					PORTD |= (1 << LED_VERDE) | (1 << LED_MOTOR);
+					PORTD &= ~(1 << LED_ROJO);
+				}
+				break;
 
-    sei(); // Habilitación de interrupciones globales
+				case CMD_PISTON:
+				if (estado_actual == 1) {
+					disparar_piston();
+				}
+				break;
 
-    while (1) {
-        if (flag_comando) {
-            flag_comando = 0;
-            
-            switch (cmd_recibido) {
-                case CMD_ESTADO:
-                    if (val_recibido == 1) {
-                        estado_sistema = 1;
-                        PORTD |= (1 << PD7);  // LED verde
-                        PORTD &= ~(1 << PD4);
-                    } else {
-                        estado_sistema = 0;
-                        PORTD &= ~(1 << PD7);
-                        PORTD |= (1 << PD4);  // LED rojo
-                        OCR0A = 0;
-                    }
-                    break;
-                    
-                case CMD_VELOCIDAD:
-                    if (estado_sistema == 1) {
-                        OCR0A = val_recibido; // Actualización de velocidad del motor
-                    }
-                    break;
-                    
-                case CMD_PISTON:
-                    if (estado_sistema == 1) {
-                        accionar_piston();
-                    }
-                    break;
-                    
-                case CMD_EMERG:
-                    estado_sistema = 2;
-                    OCR0A = 0;
-                    PORTD &= ~(1 << PD7);
-                    break;
-            }
-        }
-        
-        // Alarma visual y sonora en estado de emergencia
-        if (estado_sistema == 2) {
-            PORTD ^= (1 << PD4);
-            PORTD |= (1 << PD3);
-            _delay_ms(150);
-            PORTD &= ~(1 << PD3);
-            _delay_ms(150);
-        }
-    }
+				case CMD_EMERG:
+				estado_actual = 2; // EMERGENCIA
+				PORTD &= ~((1 << LED_VERDE) | (1 << LED_MOTOR));
+				PORTB &= ~(1 << LED_PISTON);
+				break;
+			}
+		}
+
+		if (estado_actual == 2) {
+			PORTD ^= (1 << LED_ROJO) | (1 << BUZZER);
+			PORTD &= ~(1 << LED_VERDE);
+			_delay_ms(200);
+		}
+	}
 }
