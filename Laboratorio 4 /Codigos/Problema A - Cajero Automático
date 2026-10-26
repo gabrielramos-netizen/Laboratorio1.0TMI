@@ -1,7 +1,8 @@
 #define F_CPU 16000000UL
 
-// Direccion I2C de ejemplo del expansor PCF8574.
-// Si la pantalla no responde, verificar si usa 0x27 o 0x3F.
+// Direccion I2C del expansor PCF8574 (0x27 o 0x3F segun el modulo).
+// OJO: este define NO afecta a TWI_LCD.c. Si tu pantalla es 0x3F,
+// cambia el valor por defecto dentro de TWI_LCD.c.
 #define PCF8574 0x27
 
 #include <avr/io.h>
@@ -14,16 +15,18 @@
 #include "SPI.h"
 #include "UART.h"
 #include "RC522.h"
-#include "TWI_LCD.H"
+#include "twi.h"
+#include "TWI_LCD.h"
 
-
-/* 
+/* ==========================================================
    CONFIGURACION DE CUENTAS Y EEPROM
-    */
+   ========================================================== */
 
-#define NUM_CUENTAS 3
-#define SALDO_INICIAL 1000
+#define NUM_CUENTAS     3
+#define SALDO_INICIAL   1000
 #define MARCA_VALIDACION 0xA5
+#define MAX_INTENTOS    3
+#define T_LED_MS        500
 
 typedef struct
 {
@@ -36,22 +39,18 @@ Cuenta cuentas[NUM_CUENTAS];
 
 Cuenta EEMEM cuentas_eeprom[NUM_CUENTAS];
 uint8_t EEMEM marca_eeprom;
-/* 
 
+/* ==========================================================
    PINES
 
-   Teclado:
-   Filas    PC0, PC1, PC2, PC3
-   Columnas PD2, PD3, PD4, PD5
-
+   Teclado:   Filas PC0-PC3, Columnas PD2-PD5
    LED verde: PB0
    LED rojo:  PD6
    Buzzer:    PD7
-
    UART:      PD0 y PD1
    RC522:     PB1 a PB5
    LCD I2C:   PC4 y PC5
-   */
+   ========================================================== */
 
 const char mapa_teclado[4][4] =
 {
@@ -61,10 +60,9 @@ const char mapa_teclado[4][4] =
     {'*', '0', '#', 'D'}
 };
 
-
-/*
-   FUNCIONES DE LCD
- */
+/* ==========================================================
+   LCD (16 caracteres por linea)
+   ========================================================== */
 
 void lcd_posicion(uint8_t fila, uint8_t columna)
 {
@@ -99,19 +97,17 @@ void lcd_mensaje(const char *linea1, const char *linea2)
     lcd_linea(1, linea2);
 }
 
-
-/* 
+/* ==========================================================
    TECLADO 4x4
- */
+   ========================================================== */
 
 void teclado_inicializar(void)
 {
-    // PC0-PC3 como salidas para las filas.
-    // Se preservan PC4-PC7, incluidos SDA y SCL.
+    // PC0-PC3 salidas (filas). Se preservan PC4-PC7 (SDA y SCL).
     DDRC = (DDRC & 0xF0) | 0x0F;
     PORTC = (PORTC & 0xF0) | 0x0F;
 
-    // PD2-PD5 como entradas con pull-up.
+    // PD2-PD5 entradas con pull-up (columnas).
     DDRD &= ~0x3C;
     PORTD |= 0x3C;
 }
@@ -120,10 +116,7 @@ char teclado_escanear(void)
 {
     for (uint8_t fila = 0; fila < 4; fila++)
     {
-        // Todas las filas quedan inicialmente en alto.
         PORTC = (PORTC & 0xF0) | 0x0F;
-
-        // Activar una fila llevandola a nivel bajo.
         PORTC &= ~(1 << fila);
 
         _delay_us(5);
@@ -132,11 +125,13 @@ char teclado_escanear(void)
         {
             if (!(PIND & (1 << (PD2 + columna))))
             {
+                PORTC = (PORTC & 0xF0) | 0x0F;
                 return mapa_teclado[fila][columna];
             }
         }
     }
 
+    PORTC = (PORTC & 0xF0) | 0x0F;
     return 0;
 }
 
@@ -150,7 +145,6 @@ char teclado_leer(void)
         _delay_ms(15);
     }
 
-    // Antirrebote y espera a que se suelte la tecla.
     _delay_ms(20);
 
     while (teclado_escanear() != 0)
@@ -161,10 +155,12 @@ char teclado_leer(void)
     return tecla;
 }
 
-
-/* 
+/* ==========================================================
    LEDS Y BUZZER
-    */
+   LED verde: operacion exitosa
+   LED rojo:  error
+   Buzzer:    SOLO tras 3 intentos fallidos de PIN
+   ========================================================== */
 
 void indicadores_inicializar(void)
 {
@@ -177,8 +173,9 @@ void indicadores_inicializar(void)
 
 void buzzer_tono(uint16_t duracion_ms)
 {
-    // Aproximadamente 2 kHz para un buzzer pasivo.
-    for (uint32_t i = 0; i < (uint32_t)duracion_ms * 4; i++)
+    // Aproximadamente 2 kHz (buzzer pasivo). Para uno activo
+    // tambien funciona: simplemente suena mientras dura.
+    for (uint32_t i = 0; i < (uint32_t)duracion_ms * 2; i++)
     {
         PORTD ^= (1 << PD7);
         _delay_us(250);
@@ -190,14 +187,14 @@ void buzzer_tono(uint16_t duracion_ms)
 void indicar_exito(void)
 {
     PORTB |= (1 << PB0);
-    buzzer_tono(70);
+    _delay_ms(T_LED_MS);
     PORTB &= ~(1 << PB0);
 }
 
 void indicar_error(void)
 {
     PORTD |= (1 << PD6);
-    buzzer_tono(150);
+    _delay_ms(T_LED_MS);
     PORTD &= ~(1 << PD6);
 }
 
@@ -208,19 +205,17 @@ void indicar_bloqueo(void)
     PORTD &= ~(1 << PD6);
 }
 
-/* 
+/* ==========================================================
    LECTOR RFID
-    */
+   ========================================================== */
 
 uint8_t leer_uid(uint8_t uid[4])
 {
-    // La libreria del profesor puede escribir hasta 16 bytes
-    // al producirse una lectura o un timeout.
+    // La libreria puede escribir hasta 16 bytes.
     uint8_t datos[16] = {0};
+    uint8_t hay_datos = 0;
 
     mfrc522_standard(datos);
-
-    uint8_t hay_datos = 0;
 
     for (uint8_t i = 0; i < 4; i++)
     {
@@ -255,31 +250,37 @@ int8_t buscar_cuenta(const uint8_t uid[4])
     return -1;
 }
 
+// La libreria no hace HALT, asi que una tarjeta quieta puede fallar
+// algunas lecturas. Se exigen varios fallos seguidos para confirmar
+// que la tarjeta realmente se retiro.
 void esperar_retirar_tarjeta(void)
 {
     uint8_t uid[4];
+    uint8_t sin_tarjeta = 0;
 
     lcd_mensaje("Retire tarjeta", "Por favor");
 
-    while (leer_uid(uid))
+    while (sin_tarjeta < 5)
     {
-        _delay_ms(200);
-    }
+        if (leer_uid(uid))
+            sin_tarjeta = 0;
+        else
+            sin_tarjeta++;
 
-    _delay_ms(300);
+        _delay_ms(100);
+    }
 }
 
-
-/* 
+/* ==========================================================
    TECLADO: PIN Y MONTO
-    */
+   ========================================================== */
 
-void leer_pin(uint8_t pin[4])
+void leer_pin(uint8_t pin[4], const char *titulo)
 {
     uint8_t cantidad = 0;
     char texto[17];
 
-    lcd_mensaje("Ingrese PIN", "");
+    lcd_mensaje(titulo, "PIN: ");
 
     while (cantidad < 4)
     {
@@ -306,7 +307,7 @@ void leer_pin(uint8_t pin[4])
     }
 }
 
-uint8_t pin_correcto(uint8_t ingresado[4], uint8_t guardado[4])
+uint8_t pin_correcto(const uint8_t ingresado[4], const uint8_t guardado[4])
 {
     for (uint8_t i = 0; i < 4; i++)
     {
@@ -350,9 +351,7 @@ uint16_t leer_monto(void)
             uint32_t valor = 0;
 
             for (uint8_t i = 0; i < cantidad; i++)
-            {
                 valor = valor * 10 + (buffer[i] - '0');
-            }
 
             if (valor > 65535UL)
                 return 0;
@@ -364,9 +363,9 @@ uint16_t leer_monto(void)
     }
 }
 
-/* 
+/* ==========================================================
    ALMACENAMIENTO PERSISTENTE
-    */
+   ========================================================== */
 
 void guardar_cuenta(uint8_t indice)
 {
@@ -397,19 +396,18 @@ uint8_t uid_duplicado(const uint8_t uid[4], uint8_t cantidad)
     return 0;
 }
 
-/* 
+/* ==========================================================
    REGISTRO INICIAL DE LAS TRES CUENTAS
-    */
+   ========================================================== */
 
 void configurar_cuentas(void)
 {
     uint8_t uid[4];
     uint8_t pin[4];
+    char linea[17];
 
     for (uint8_t i = 0; i < NUM_CUENTAS; i++)
     {
-        char linea[17];
-
         snprintf(linea, sizeof(linea), "Registrar %u/3", i + 1);
 
         while (1)
@@ -436,8 +434,7 @@ void configurar_cuentas(void)
         for (uint8_t j = 0; j < 4; j++)
             cuentas[i].uid[j] = uid[j];
 
-        lcd_mensaje("Defina PIN", "Use 4 digitos");
-        leer_pin(pin);
+        leer_pin(pin, "Defina PIN (4 d)");
 
         for (uint8_t j = 0; j < 4; j++)
             cuentas[i].pin[j] = pin[j];
@@ -448,58 +445,19 @@ void configurar_cuentas(void)
 
         lcd_mensaje("Cuenta guardada", "Correctamente");
         indicar_exito();
-        _delay_ms(1000);
+        _delay_ms(500);
     }
 
-    // Se escribe la marca al final, una vez registradas
-    // las tres cuentas.
+    // La marca se escribe al final, con las 3 cuentas registradas.
     eeprom_update_byte(&marca_eeprom, MARCA_VALIDACION);
 
     lcd_mensaje("Registro listo", "Cajero iniciado");
     _delay_ms(1500);
 }
 
-/* 
-   AUTENTICACION
-    */
-
-uint8_t autenticar(uint8_t indice)
-{
-    uint8_t ingresado[4];
-
-    for (uint8_t intento = 0; intento < 3; intento++)
-    {
-        char linea[17];
-
-        snprintf(linea, sizeof(linea), "Intento %u de 3", intento + 1);
-        lcd_mensaje(linea, "Ingrese PIN");
-
-        leer_pin(ingresado);
-
-        if (pin_correcto(ingresado, cuentas[indice].pin))
-        {
-            lcd_mensaje("PIN correcto", "Bienvenido");
-            indicar_exito();
-            _delay_ms(1000);
-            return 1;
-        }
-
-        lcd_mensaje("PIN incorrecto", "Intente otra vez");
-        indicar_error();
-        _delay_ms(1000);
-    }
-
-    lcd_mensaje("Acceso bloqueado", "3 errores PIN");
-    indicar_bloqueo();
-    _delay_ms(1000);
-
-    return 0;
-}
-
-
-/* 
+/* ==========================================================
    OPERACIONES BANCARIAS
-    */
+   ========================================================== */
 
 void consultar_saldo(uint8_t indice)
 {
@@ -508,7 +466,8 @@ void consultar_saldo(uint8_t indice)
     snprintf(linea, sizeof(linea), "Saldo: %u", cuentas[indice].saldo);
 
     lcd_mensaje("Saldo disponible", linea);
-    _delay_ms(2000);
+    indicar_exito();
+    _delay_ms(1500);
 }
 
 void depositar(uint8_t indice)
@@ -517,9 +476,9 @@ void depositar(uint8_t indice)
 
     if (monto == 0)
     {
-        lcd_mensaje("Monto invalido", "Operacion cancel.");
+        lcd_mensaje("Monto invalido", "Cancelado");
         indicar_error();
-        _delay_ms(1200);
+        _delay_ms(1000);
         return;
     }
 
@@ -529,16 +488,16 @@ void depositar(uint8_t indice)
     {
         lcd_mensaje("Monto excesivo", "No se deposito");
         indicar_error();
-        _delay_ms(1200);
+        _delay_ms(1000);
         return;
     }
 
     cuentas[indice].saldo = (uint16_t)nuevo_saldo;
     guardar_cuenta(indice);
 
-    lcd_mensaje("Deposito correcto", "Saldo actualizado");
+    lcd_mensaje("Deposito exitoso", "Saldo guardado");
     indicar_exito();
-    _delay_ms(1500);
+    _delay_ms(1000);
 }
 
 void retirar(uint8_t indice)
@@ -547,9 +506,9 @@ void retirar(uint8_t indice)
 
     if (monto == 0)
     {
-        lcd_mensaje("Monto invalido", "Operacion cancel.");
+        lcd_mensaje("Monto invalido", "Cancelado");
         indicar_error();
-        _delay_ms(1200);
+        _delay_ms(1000);
         return;
     }
 
@@ -557,72 +516,119 @@ void retirar(uint8_t indice)
     {
         lcd_mensaje("Saldo insufic.", "Retiro rechazado");
         indicar_error();
-        _delay_ms(1500);
+        _delay_ms(1000);
         return;
     }
 
     cuentas[indice].saldo -= monto;
     guardar_cuenta(indice);
 
-    lcd_mensaje("Retiro correcto", "Saldo actualizado");
+    lcd_mensaje("Retiro exitoso", "Saldo guardado");
     indicar_exito();
-    _delay_ms(1500);
+    _delay_ms(1000);
 }
 
-
-/* 
-   MENU PRINCIPAL DE LA CUENTA
-    */
-
-void menu_cuenta(uint8_t indice)
+void i2c_escanear(void)
 {
-    uint8_t salir = 0;
+	uint8_t encontrados = 0;
 
-    while (!salir)
-    {
-        lcd_mensaje("A:Saldo B:Retiro", "C:Deposito D:Fin");
+	uart_print("Escaneando I2C...\r\n");
 
-        char tecla = teclado_leer();
+	for (uint8_t dir = 1; dir < 127; dir++)
+	{
+		TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWEN);
+		while (!(TWCR & (1 << TWINT)));
 
-        switch (tecla)
-        {
-            case 'A':
-                consultar_saldo(indice);
-                break;
+		TWDR = (uint8_t)(dir << 1);
+		TWCR = (1 << TWINT) | (1 << TWEN);
+		while (!(TWCR & (1 << TWINT)));
 
-            case 'B':
-                retirar(indice);
-                break;
+		if ((TWSR & 0xF8) == 0x18)   // SLA+W con ACK
+		{
+			uart_print("Responde dir: ");
+			uart_print_hex(dir);
+			uart_print("\r\n");
+			encontrados++;
+		}
 
-            case 'C':
-                depositar(indice);
-                break;
+		TWCR = (1 << TWINT) | (1 << TWEN) | (1 << TWSTO);
+		while (TWCR & (1 << TWSTO));
+	}
 
-            case 'D':
-                salir = 1;
-                lcd_mensaje("Sesion finalizada", "Retire tarjeta");
-                _delay_ms(1000);
-                break;
+	if (encontrados == 0)
+	uart_print("Ningun dispositivo I2C responde\r\n");
 
-            default:
-                break;
-        }
-    }
+	uart_print("Escaneo terminado\r\n");
 }
 
+/* ==========================================================
+   MAQUINA DE ESTADOS
+   ========================================================== */
 
-/* 
+typedef enum
+{
+    ST_ESPERA_TARJETA,
+    ST_TARJETA_INVALIDA,
+    ST_PEDIR_PIN,
+    ST_VERIFICAR_PIN,
+    ST_BLOQUEO,
+    ST_MENU,
+    ST_CONSULTA,
+    ST_RETIRO,
+    ST_DEPOSITO,
+    ST_FIN
+} Estado;
+
+extern void PCF8574_write(unsigned char x);   // definida en TWI_LCD.c
+
+static void lcd_nibble(uint8_t nibble)
+{
+	uint8_t d = (uint8_t)((nibble << 4) | 0x08);   // backlight ON, RS=0, RW=0
+
+	PCF8574_write(d | 0x04);                        // EN = 1
+	_delay_us(50);
+	PCF8574_write(d);                               // EN = 0
+	_delay_us(50);
+}
+
+void lcd_inicializar(void)
+{
+	_delay_ms(50);              // espera a que el LCD arranque
+
+	lcd_nibble(0x03);
+	_delay_ms(5);
+	lcd_nibble(0x03);
+	_delay_us(150);
+	lcd_nibble(0x03);
+	_delay_us(150);
+	lcd_nibble(0x02);           // pasa a modo de 4 bits
+	_delay_us(150);
+
+	twi_lcd_cmd(0x28);          // 4 bits, 2 lineas
+	twi_lcd_cmd(0x0C);          // display ON, cursor OFF
+	twi_lcd_cmd(0x01);          // limpiar pantalla
+	_delay_ms(3);
+	twi_lcd_cmd(0x06);          // cursor avanza a la derecha
+	_delay_ms(2);
+}
+
+/* ==========================================================
    PROGRAMA PRINCIPAL
-    */
+   ========================================================== */
 
 int main(void)
 {
     uint8_t uid[4];
+    uint8_t pin[4];
+    char linea[17];
+    Estado estado = ST_ESPERA_TARJETA;
+    int8_t indice = -1;
+    uint8_t intentos = 0;
 
-    // Inicializar UART a 9600 baudios.
+    // UART a 9600 baudios.
     uart_init(103);
 
-    // Inicializar SPI y seleccionar el RC522.
+    // SPI y RC522.
     spi_init();
 
     DDRB |= (1 << PB2);
@@ -631,19 +637,31 @@ int main(void)
     mfrc522_resetPinInit();
     mfrc522_init();
 
-    // Inicializar TWI y LCD.
-    twi_init();
-    twi_lcd_init();
+           twi_init();
+    PORTC |= (1 << PC4) | (1 << PC5);   // pull-ups internos de SDA y SCL
+    uart_print("TWI listo\r\n");
+    i2c_escanear();
+        lcd_inicializar();
+        uart_print("LCD listo\r\n");
 
-    // Configurar teclado e indicadores DESPUES de inicializar
-    // la pantalla, para configurar PC0-PC3 como filas.
+    // Teclado e indicadores DESPUES de twi_init (que cambia DDRC).
     teclado_inicializar();
     indicadores_inicializar();
 
-    lcd_mensaje("Cajero automatico", "Iniciando...");
+    lcd_mensaje("Cajero ATM", "Iniciando...");
     _delay_ms(1000);
 
-    // Comprobar si ya se registraron las cuentas.
+    // Para volver a registrar las tarjetas: mantener pulsada la tecla D
+    // al encender el sistema.
+    if (teclado_escanear() == 'D')
+    {
+        eeprom_update_byte(&marca_eeprom, 0xFF);
+        lcd_mensaje("Registro borrado", "Suelte la tecla");
+        while (teclado_escanear() != 0)
+            _delay_ms(10);
+        _delay_ms(500);
+    }
+
     if (eeprom_read_byte(&marca_eeprom) != MARCA_VALIDACION)
     {
         configurar_cuentas();
@@ -651,49 +669,112 @@ int main(void)
     else
     {
         cargar_cuentas();
-        lcd_mensaje("Cuentas cargadas", "Acerque tarjeta");
-        _delay_ms(1200);
+        lcd_mensaje("Cuentas cargadas", "Sistema listo");
+        _delay_ms(1000);
     }
 
     while (1)
     {
-        int8_t indice;
-
-        lcd_mensaje("Cajero listo", "Acerque tarjeta");
-
-        // Esperar una tarjeta RFID.
-        while (!leer_uid(uid))
+        switch (estado)
         {
-            _delay_ms(200);
+            case ST_ESPERA_TARJETA:
+                lcd_mensaje("Cajero listo", "Acerque tarjeta");
+
+                while (!leer_uid(uid))
+                {
+                    _delay_ms(200);
+                }
+
+                indice = buscar_cuenta(uid);
+
+                if (indice < 0)
+                {
+                    estado = ST_TARJETA_INVALIDA;
+                }
+                else
+                {
+                    intentos = 0;
+                    lcd_mensaje("Tarjeta valida", "");
+                    _delay_ms(500);
+                    esperar_retirar_tarjeta();
+                    estado = ST_PEDIR_PIN;
+                }
+                break;
+
+            case ST_TARJETA_INVALIDA:
+                lcd_mensaje("Tarjeta invalida", "Acceso denegado");
+                indicar_error();
+                esperar_retirar_tarjeta();
+                estado = ST_ESPERA_TARJETA;
+                break;
+
+            case ST_PEDIR_PIN:
+                strcpy(linea, "Intento X de 3");
+                linea[8] = '1' + intentos;
+                leer_pin(pin, linea);
+                estado = ST_VERIFICAR_PIN;
+                break;
+
+            case ST_VERIFICAR_PIN:
+                if (pin_correcto(pin, cuentas[indice].pin))
+                {
+                    lcd_mensaje("PIN correcto", "Bienvenido");
+                    indicar_exito();
+                    estado = ST_MENU;
+                }
+                else
+                {
+                    intentos++;
+                    lcd_mensaje("PIN incorrecto", "Intente otra vez");
+                    indicar_error();
+                    estado = (intentos >= MAX_INTENTOS) ? ST_BLOQUEO : ST_PEDIR_PIN;
+                }
+                break;
+
+            case ST_BLOQUEO:
+                lcd_mensaje("Acceso bloqueado", "3 errores PIN");
+                indicar_bloqueo();
+                _delay_ms(500);
+                estado = ST_ESPERA_TARJETA;
+                break;
+
+            case ST_MENU:
+                lcd_mensaje("A:Saldo B:Retiro", "C:Deposito D:Fin");
+
+                switch (teclado_leer())
+                {
+                    case 'A': estado = ST_CONSULTA; break;
+                    case 'B': estado = ST_RETIRO;   break;
+                    case 'C': estado = ST_DEPOSITO; break;
+                    case 'D': estado = ST_FIN;      break;
+                    default:  break;
+                }
+                break;
+
+            case ST_CONSULTA:
+                consultar_saldo((uint8_t)indice);
+                estado = ST_MENU;
+                break;
+
+            case ST_RETIRO:
+                retirar((uint8_t)indice);
+                estado = ST_MENU;
+                break;
+
+            case ST_DEPOSITO:
+                depositar((uint8_t)indice);
+                estado = ST_MENU;
+                break;
+
+            case ST_FIN:
+                lcd_mensaje("Sesion cerrada", "Hasta luego");
+                _delay_ms(1000);
+                estado = ST_ESPERA_TARJETA;
+                break;
+
+            default:
+                estado = ST_ESPERA_TARJETA;
+                break;
         }
-
-        // Buscar la cuenta asociada al UID.
-        indice = buscar_cuenta(uid);
-
-        if (indice < 0)
-        {
-            lcd_mensaje("Tarjeta no valida", "Acceso denegado");
-            indicar_error();
-            _delay_ms(1200);
-            esperar_retirar_tarjeta();
-            continue;
-        }
-
-        lcd_mensaje("Tarjeta valida", "Retire tarjeta");
-        esperar_retirar_tarjeta();
-
-        // Solicitar PIN y permitir hasta tres intentos.
-        if (!autenticar((uint8_t)indice))
-        {
-            esperar_retirar_tarjeta();
-            continue;
-        }
-
-        // Entrar al menu de operaciones.
-        menu_cuenta((uint8_t)indice);
-
-        // Evitar iniciar otra sesion con la misma tarjeta
-        // si el usuario no la ha retirado.
-        esperar_retirar_tarjeta();
     }
 }
