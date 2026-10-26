@@ -1,38 +1,55 @@
 
+
 #define F_CPU 16000000UL
 
 #include <avr/io.h>
-#include <util/delay.h>
-#include <avr/eeprom.h>
 #include <avr/interrupt.h>
+#include <avr/eeprom.h>
+#include <util/delay.h>
 #include <stdint.h>
-#include <stdlib.h>
 
-//CONFIGURACION
+/* =====================================================
+   JUEGO DE MEMORIA - ATmega328P
+   Matriz WS2812B RGB 8x8
+   Joystick KY-023
+   Buzzer
+   EEPROM para guardar nivel y record
+   ===================================================== */
 
-#define JOY_X       PC0
-#define JOY_Y       PC1
-#define BOTON_SW    PD2
-#define BUZZER      PD3
+/* ---------------- PINES ---------------- */
 
+// Matriz WS2812B: DIN conectado a PD6 (Arduino D6)
+#define LED_DDR   DDRD
+#define LED_PORT  PORTD
+#define LED_PIN   PD6
+
+// Joystick
+#define JOY_X     PC0       // A0
+#define JOY_Y     PC1       // A1
+#define JOY_SW    PD2       // D2
+
+// Buzzer
+#define BUZZER_PIN PD3      // D3
+
+#define TOTAL_LEDS 64
 #define MAX_SECUENCIA 64
-#define ZONA_MUERTA  100
-#define EEPROM_MARCA 0xA5
 
-/* Colores disponibles */
+/* ---------------- COLORES ---------------- */
+
 #define ROJO       0
 #define VERDE      1
 #define AZUL       2
 #define AMARILLO   3
 
-/* Estados del juego */
-#define MODO_LIBRE       0
-#define MOSTRAR          1
-#define TURNO_JUGADOR    2
-#define EXITO            3
-#define ERROR_JUEGO      4
+/* ---------------- ESTADOS ---------------- */
 
-//variables
+#define MODO_LIBRE      0
+#define MOSTRAR         1
+#define TURNO_JUGADOR   2
+#define EXITO           3
+#define ERROR_JUEGO     4
+
+/* ---------------- ESTRUCTURAS ---------------- */
 
 typedef struct
 {
@@ -41,631 +58,627 @@ typedef struct
     uint8_t color;
 } Elemento;
 
-Elemento secuencia[MAX_SECUENCIA];
-
-/* Matriz LED monocromatica 8x8 */
-volatile uint8_t imagen[8][8] = {{0}};
-volatile uint8_t fila_actual = 0;
-
-const uint8_t pines_filas[8] = {
-	4, 5, 6, 7, 8, 9, 10, 11
-};
-
-const uint8_t pines_columnas[8] = {
-	12, 13, 16, 17, 18, 19, 0, 1
-};
-
-uint8_t nivel = 1;
-uint8_t record = 0;
-uint8_t longitud = 1;
-uint8_t indice_jugador = 0;
-
-uint8_t cursor_x = 3;
-uint8_t cursor_y = 3;
-uint8_t color_cursor = ROJO;
-
-uint8_t estado = MODO_LIBRE;
-uint8_t juego_iniciado = 0;
-
-/* EEPROM */
-uint8_t EEMEM ee_marca;
-uint8_t EEMEM ee_record;
-
-//funciones
-
-void ADC_inicializar(void);
-uint16_t ADC_leer(uint8_t canal);
-
-void GPIO_inicializar(void);
-void mover_cursor(void);
-void manejar_boton(void);
-
-void matriz_inicializar(void);
-void matriz_limpiar(void);
-void matriz_pixel(uint8_t x, uint8_t y, uint8_t color);
-void matriz_actualizar_cursor(void);
-void mostrar_secuencia(void);
-void animacion_exito(void);
-void animacion_error(void);
-
-void buzzer_tono(uint16_t frecuencia, uint16_t duracion_ms);
-void sonido_color(uint8_t color);
-
-void generar_secuencia(void);
-void iniciar_juego(void);
-void comprobar_posicion(void);
-void guardar_record(void);
-void cargar_record(void);
-
-uint8_t boton_presionado(void);
-
-void pin_salida(uint8_t pin);
-void pin_escribir(uint8_t pin, uint8_t valor);
-void matriz_refrescar_fila(void);
-
-//main
-
-int main(void)
+typedef struct
 {
-    GPIO_inicializar();
-    ADC_inicializar();
-    matriz_inicializar();
+    uint16_t marca;
+    uint8_t nivel;
+    uint8_t record;
+    uint8_t longitud;
+    uint8_t indice;
+    uint8_t cursorX;
+    uint8_t cursorY;
+    uint8_t colorCursor;
+    uint8_t estado;
+    Elemento secuencia[MAX_SECUENCIA];
+} DatosGuardados;
 
-    cargar_record();
+/* ---------------- VARIABLES ---------------- */
 
-    /* Semilla inicial para el generador aleatorio */
-    uint16_t semilla = ADC_leer(0);
-    semilla ^= ADC_leer(1);
-    semilla ^= TCNT0;
+static Elemento secuencia[MAX_SECUENCIA];
 
-    srand(semilla);
+static uint8_t nivel = 1;
+static uint8_t record = 0;
+static uint8_t longitud = 1;
+static uint8_t indiceJugador = 0;
 
-    matriz_limpiar();
-    matriz_actualizar_cursor();
+static uint8_t cursorX = 3;
+static uint8_t cursorY = 3;
+static uint8_t colorCursor = VERDE;
 
-    while (1)
-    {
-        if (estado == MODO_LIBRE)
-        {
-            mover_cursor();
-            matriz_actualizar_cursor();
-            manejar_boton();
-        }
-        else if (estado == MOSTRAR)
-        {
-            mostrar_secuencia();
-            indice_jugador = 0;
-            estado = TURNO_JUGADOR;
-            matriz_actualizar_cursor();
-        }
-        else if (estado == TURNO_JUGADOR)
-        {
-            mover_cursor();
-            matriz_actualizar_cursor();
+static uint8_t estado = MODO_LIBRE;
+static uint8_t semilla = 37;
 
-            if (boton_presionado())
-            {
-                _delay_ms(30);
+static uint8_t botonAnterior = 1;
+static uint16_t tiempoPulsado = 0;
 
-                if (boton_presionado())
-                {
-                    comprobar_posicion();
+/* ---------------- EEPROM ---------------- */
 
-                    while (boton_presionado())
-                    {
-                        _delay_ms(10);
-                    }
-                }
-            }
-        }
-        else if (estado == EXITO)
-        {
-	        animacion_exito();
+#define MARCA_EEPROM 0xA65C
 
-	        /* Guardar el nivel que se acaba de completar */
-	        if (nivel > record)
-	        {
-		        record = nivel;
-		        guardar_record();
-	        }
+DatosGuardados EEMEM memoriaJuego;
 
-	        if (longitud < MAX_SECUENCIA)
-	        {
-		        longitud++;
-		        nivel = longitud;
+/* =====================================================
+   CONTROL DE BUZZER
+   ===================================================== */
 
-		        generar_secuencia();
-
-		        estado = MOSTRAR;
-	        }
-	        else
-	        {
-		        /* Se alcanzo la longitud maxima */
-		        estado = MODO_LIBRE;
-		        juego_iniciado = 0;
-	        }
-        }
-        else if (estado == ERROR_JUEGO)
-        {
-            animacion_error();
-
-            guardar_record();
-
-            nivel = 1;
-            longitud = 1;
-            indice_jugador = 0;
-
-            juego_iniciado = 0;
-            estado = MODO_LIBRE;
-
-            matriz_limpiar();
-            matriz_actualizar_cursor();
-        }
-    }
+static void esperar_ms(uint16_t ms)
+{
+    while (ms--)
+        _delay_ms(1);
 }
 
-//gpio
-
-void GPIO_inicializar(void)
+static void buzzer(uint16_t frecuencia, uint16_t duracion)
 {
-    /* Joystick: PC0 y PC1 como entradas */
-    DDRC &= ~((1 << JOY_X) | (1 << JOY_Y));
-
-    /* Desactivar pull-ups en las entradas analogicas */
-    PORTC &= ~((1 << JOY_X) | (1 << JOY_Y));
-
-    /* Boton y buzzer */
-    DDRD &= ~(1 << BOTON_SW);
-    PORTD |= (1 << BOTON_SW);  // Pull-up del boton
-
-    DDRD |= (1 << BUZZER);
-    PORTD &= ~(1 << BUZZER);
-
-    /* Timer0 libre para una variacion de la semilla */
-    TCCR0A = 0;
-    TCCR0B = (1 << CS01) | (1 << CS00);
-}
-
-uint8_t boton_presionado(void)
-{
-    /* El boton conecta la entrada a GND */
-    return !(PIND & (1 << BOTON_SW));
-}
-
-//Adc
-
-void ADC_inicializar(void)
-{
-    /* Referencia AVcc */
-    ADMUX = (1 << REFS0);
-
-    /* ADC habilitado, prescaler 128 */
-    ADCSRA = (1 << ADEN)
-           | (1 << ADPS2)
-           | (1 << ADPS1)
-           | (1 << ADPS0);
-}
-
-uint16_t ADC_leer(uint8_t canal)
-{
-    ADMUX = (ADMUX & 0xF0) | (canal & 0x0F);
-
-    ADCSRA |= (1 << ADSC);
-
-    while (ADCSRA & (1 << ADSC))
+    if (frecuencia == 0)
     {
-        /* Esperar conversion */
-    }
-
-    return ADC;
-}
-
-//joystick
-void mover_cursor(void)
-{
-    uint16_t x = ADC_leer(0);
-    uint16_t y = ADC_leer(1);
-
-    uint8_t movio = 0;
-
-    if (x < (512 - ZONA_MUERTA))
-    {
-        if (cursor_x > 0)
-        {
-            cursor_x--;
-            movio = 1;
-        }
-    }
-    else if (x > (512 + ZONA_MUERTA))
-    {
-        if (cursor_x < 7)
-        {
-            cursor_x++;
-            movio = 1;
-        }
-    }
-
-    if (y < (512 - ZONA_MUERTA))
-    {
-        if (cursor_y > 0)
-        {
-            cursor_y--;
-            movio = 1;
-        }
-    }
-    else if (y > (512 + ZONA_MUERTA))
-    {
-        if (cursor_y < 7)
-        {
-            cursor_y++;
-            movio = 1;
-        }
-    }
-
-    if (movio)
-    {
-        _delay_ms(180);
-    }
-}
-
-//boton
-void manejar_boton(void)
-{
-    if (!boton_presionado())
-    {
+        esperar_ms(duracion);
+        PORTD &= ~(1 << BUZZER_PIN);
         return;
     }
 
-    _delay_ms(30);
+    uint16_t periodo = 1000000UL / frecuencia;
+    uint16_t semiperiodo = periodo / 2;
+    uint32_t ciclos = ((uint32_t)frecuencia * duracion) / 1000;
 
-    if (!boton_presionado())
+    while (ciclos--)
     {
+        PORTD |= (1 << BUZZER_PIN);
+
+        for (uint16_t i = 0; i < semiperiodo; i++)
+            _delay_us(1);
+
+        PORTD &= ~(1 << BUZZER_PIN);
+
+        for (uint16_t i = 0; i < semiperiodo; i++)
+            _delay_us(1);
+    }
+
+    PORTD &= ~(1 << BUZZER_PIN);
+}
+
+static void sonidoColor(uint8_t color)
+{
+    switch (color)
+    {
+        case ROJO:     buzzer(440, 120); break;
+        case VERDE:    buzzer(554, 120); break;
+        case AZUL:     buzzer(659, 120); break;
+        case AMARILLO: buzzer(784, 120); break;
+        default:       buzzer(300, 100); break;
+    }
+}
+
+/* =====================================================
+   MATRIZ WS2812B
+   Orden de datos: GRB
+   ===================================================== */
+
+/*
+   Esta rutina transmite cada byte al WS2812B.
+   La temporización debe comprobarse en la simulación.
+*/
+
+static void ws2812_enviarByte(uint8_t dato)
+{
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        if (dato & 0x80)
+        {
+            LED_PORT |= (1 << LED_PIN);
+            _delay_us(0.65);
+
+            LED_PORT &= ~(1 << LED_PIN);
+            _delay_us(0.55);
+        }
+        else
+        {
+            LED_PORT |= (1 << LED_PIN);
+            _delay_us(0.30);
+
+            LED_PORT &= ~(1 << LED_PIN);
+            _delay_us(0.90);
+        }
+
+        dato <<= 1;
+    }
+}
+
+static void ws2812_enviarColor(uint8_t rojo,
+                              uint8_t verde,
+                              uint8_t azul)
+{
+    uint8_t interrupciones = SREG;
+    cli();
+
+    // El WS2812B recibe los componentes en orden GRB.
+    ws2812_enviarByte(verde);
+    ws2812_enviarByte(rojo);
+    ws2812_enviarByte(azul);
+
+    SREG = interrupciones;
+}
+
+static void matrizMostrar(void)
+{
+    _delay_us(80);
+}
+
+static void matrizLimpiar(void)
+{
+    for (uint8_t i = 0; i < TOTAL_LEDS; i++)
+        ws2812_enviarColor(0, 0, 0);
+
+    matrizMostrar();
+}
+
+static void colorRGB(uint8_t color,
+                     uint8_t *rojo,
+                     uint8_t *verde,
+                     uint8_t *azul)
+{
+    switch (color)
+    {
+        case ROJO:
+            *rojo = 255;
+            *verde = 0;
+            *azul = 0;
+            break;
+
+        case VERDE:
+            *rojo = 0;
+            *verde = 255;
+            *azul = 0;
+            break;
+
+        case AZUL:
+            *rojo = 0;
+            *verde = 0;
+            *azul = 255;
+            break;
+
+        case AMARILLO:
+            *rojo = 255;
+            *verde = 100;
+            *azul = 0;
+            break;
+
+        default:
+            *rojo = 0;
+            *verde = 0;
+            *azul = 0;
+            break;
+    }
+}
+
+/*
+   Indexación lógica:
+   x = columna (0 a 7)
+   y = fila (0 a 7)
+
+   Si la orientación física de la matriz es diferente,
+   habrá que adaptar este cálculo.
+*/
+
+static void matrizPixel(uint8_t x, uint8_t y, uint8_t color)
+{
+    if (x > 7 || y > 7)
         return;
+
+    uint8_t rojo, verde, azul;
+    uint8_t posicion = y * 8 + x;
+
+    colorRGB(color, &rojo, &verde, &azul);
+
+    uint8_t interrupciones = SREG;
+    cli();
+
+    for (uint8_t i = 0; i < TOTAL_LEDS; i++)
+    {
+        if (i == posicion)
+            ws2812_enviarColor(rojo, verde, azul);
+        else
+            ws2812_enviarColor(0, 0, 0);
     }
 
-    uint16_t tiempo = 0;
+    SREG = interrupciones;
+    matrizMostrar();
+}
 
-    while (boton_presionado() && tiempo < 1200)
+static void matrizCursor(void)
+{
+    matrizPixel(cursorX, cursorY, colorCursor);
+}
+
+/* =====================================================
+   GENERADOR PSEUDOALEATORIO
+   ===================================================== */
+
+static uint8_t aleatorio(void)
+{
+    semilla ^= semilla << 3;
+    semilla ^= semilla >> 5;
+    semilla ^= semilla << 1;
+
+    return semilla;
+}
+
+static void generarElemento(uint8_t posicion)
+{
+    secuencia[posicion].x = aleatorio() % 8;
+    secuencia[posicion].y = aleatorio() % 8;
+    secuencia[posicion].color = aleatorio() % 4;
+}
+
+static void generarNuevoElemento(void)
+{
+    if (longitud < MAX_SECUENCIA)
     {
-        _delay_ms(10);
-        tiempo += 10;
+        generarElemento(longitud);
+        longitud++;
     }
+}
 
-    if (tiempo >= 1000)
+/* =====================================================
+   GUARDADO Y RECUPERACIÓN EEPROM
+   ===================================================== */
+
+static void guardarJuego(void)
+{
+    DatosGuardados datos;
+
+    datos.marca = MARCA_EEPROM;
+    datos.nivel = nivel;
+    datos.record = record;
+    datos.longitud = longitud;
+    datos.indice = indiceJugador;
+    datos.cursorX = cursorX;
+    datos.cursorY = cursorY;
+    datos.colorCursor = colorCursor;
+    datos.estado = estado;
+
+    for (uint8_t i = 0; i < MAX_SECUENCIA; i++)
+        datos.secuencia[i] = secuencia[i];
+
+    eeprom_update_block(&datos, &memoriaJuego, sizeof(datos));
+}
+
+static void cargarJuego(void)
+{
+    DatosGuardados datos;
+
+    eeprom_read_block(&datos, &memoriaJuego, sizeof(datos));
+
+    if (datos.marca == MARCA_EEPROM &&
+        datos.longitud >= 1 &&
+        datos.longitud <= MAX_SECUENCIA &&
+        datos.cursorX < 8 &&
+        datos.cursorY < 8 &&
+        datos.colorCursor <= AMARILLO &&
+        datos.estado <= ERROR_JUEGO &&
+        datos.indice <= datos.longitud)
     {
-        iniciar_juego();
+        nivel = datos.nivel;
+        record = datos.record;
+        longitud = datos.longitud;
+        indiceJugador = datos.indice;
+        cursorX = datos.cursorX;
+        cursorY = datos.cursorY;
+        colorCursor = datos.colorCursor;
+        estado = datos.estado;
+
+        for (uint8_t i = 0; i < MAX_SECUENCIA; i++)
+            secuencia[i] = datos.secuencia[i];
     }
     else
     {
-        color_cursor = rand() % 4;
-        sonido_color(color_cursor);
-        matriz_actualizar_cursor();
-    }
+        nivel = 1;
+        record = 0;
+        longitud = 1;
+        indiceJugador = 0;
+        cursorX = 3;
+        cursorY = 3;
+        colorCursor = VERDE;
+        estado = MODO_LIBRE;
 
-    while (boton_presionado())
-    {
-        _delay_ms(10);
+        generarElemento(0);
+        guardarJuego();
     }
 }
 
-//juego
+/* =====================================================
+   JUEGO
+   ===================================================== */
 
-void iniciar_juego(void)
+static void iniciarJuego(void)
 {
     nivel = 1;
     longitud = 1;
-    indice_jugador = 0;
+    indiceJugador = 0;
 
-    juego_iniciado = 1;
+    generarElemento(0);
 
-    generar_secuencia();
     estado = MOSTRAR;
+    guardarJuego();
 }
 
-
-void generar_secuencia(void)
+static void mostrarSecuencia(void)
 {
-	uint8_t i = longitud - 1;
-
-	secuencia[i].x = rand() % 8;
-	secuencia[i].y = rand() % 8;
-	secuencia[i].color = rand() % 4;
-}
-
-
-void comprobar_posicion(void)
-{
-    Elemento esperado = secuencia[indice_jugador];
-
-    if (cursor_x == esperado.x &&
-        cursor_y == esperado.y)
+    for (uint8_t i = 0; i < longitud; i++)
     {
-        sonido_color(esperado.color);
+        matrizLimpiar();
 
-        indice_jugador++;
+        matrizPixel(secuencia[i].x,
+                    secuencia[i].y,
+                    secuencia[i].color);
 
-        if (indice_jugador >= longitud)
-        {
+        sonidoColor(secuencia[i].color);
+
+        esperar_ms(380);
+        matrizLimpiar();
+        esperar_ms(200);
+    }
+
+    indiceJugador = 0;
+    estado = TURNO_JUGADOR;
+    guardarJuego();
+    matrizCursor();
+}
+
+static void procesarExito(void)
+{
+    matrizLimpiar();
+
+    for (uint8_t i = 0; i < TOTAL_LEDS; i++)
+        ws2812_enviarColor(0, 100, 0);
+
+    matrizMostrar();
+    buzzer(880, 180);
+    esperar_ms(200);
+
+    if (nivel < 255)
+        nivel++;
+
+    if (nivel > record)
+        record = nivel;
+
+    generarNuevoElemento();
+    indiceJugador = 0;
+    estado = MOSTRAR;
+
+    guardarJuego();
+}
+
+static void procesarError(void)
+{
+    for (uint8_t i = 0; i < 3; i++)
+    {
+        // Iluminar la matriz en rojo.
+        for (uint8_t j = 0; j < TOTAL_LEDS; j++)
+            ws2812_enviarColor(100, 0, 0);
+
+        matrizMostrar();
+        buzzer(150, 200);
+
+        matrizLimpiar();
+        esperar_ms(150);
+    }
+
+    nivel = 1;
+    longitud = 1;
+    indiceJugador = 0;
+
+    generarElemento(0);
+
+    estado = MODO_LIBRE;
+    guardarJuego();
+    matrizCursor();
+}
+
+static void comprobarPosicion(void)
+{
+    Elemento esperado = secuencia[indiceJugador];
+
+    if (cursorX == esperado.x && cursorY == esperado.y)
+    {
+        sonidoColor(esperado.color);
+        indiceJugador++;
+
+        if (indiceJugador >= longitud)
             estado = EXITO;
-        }
     }
     else
     {
         estado = ERROR_JUEGO;
     }
+
+    guardarJuego();
 }
 
-//secuencia
+/* =====================================================
+   JOYSTICK
+   ===================================================== */
 
-void mostrar_secuencia(void)
+static void moverCursor(void)
 {
-    matriz_limpiar();
-    _delay_ms(300);
+    uint16_t x = ADC;
+    uint16_t y;
 
-    for (uint8_t i = 0; i < longitud; i++)
+    // Leer eje X.
+    ADMUX = (ADMUX & 0xF0) | JOY_X;
+    ADCSRA |= (1 << ADSC);
+
+    while (ADCSRA & (1 << ADSC))
+        ;
+
+    x = ADC;
+
+    // Leer eje Y.
+    ADMUX = (ADMUX & 0xF0) | JOY_Y;
+    ADCSRA |= (1 << ADSC);
+
+    while (ADCSRA & (1 << ADSC))
+        ;
+
+    y = ADC;
+
+    uint8_t movio = 0;
+
+    if (x < 350 && cursorX > 0)
     {
-        matriz_limpiar();
+        cursorX--;
+        movio = 1;
+    }
+    else if (x > 650 && cursorX < 7)
+    {
+        cursorX++;
+        movio = 1;
+    }
 
-        matriz_pixel(
-            secuencia[i].x,
-            secuencia[i].y,
-            secuencia[i].color
-        );
+    if (y < 350 && cursorY > 0)
+    {
+        cursorY--;
+        movio = 1;
+    }
+    else if (y > 650 && cursorY < 7)
+    {
+        cursorY++;
+        movio = 1;
+    }
 
-        sonido_color(secuencia[i].color);
-
-        _delay_ms(500);
-
-        matriz_limpiar();
-        _delay_ms(200);
+    if (movio)
+    {
+        matrizCursor();
+        esperar_ms(150);
     }
 }
 
-//buzzer
+/* =====================================================
+   INICIALIZACIÓN
+   ===================================================== */
 
-
-void buzzer_tono(uint16_t frecuencia, uint16_t duracion_ms)
+static void inicializar(void)
 {
-	if (frecuencia == 0)
-	{
-		while (duracion_ms > 0)
-		{
-			_delay_ms(1);
-			duracion_ms--;
-		}
-		return;
-	}
+    // Matriz: PD6 salida.
+    LED_DDR |= (1 << LED_PIN);
+    LED_PORT &= ~(1 << LED_PIN);
 
-	uint32_t semiperiodo_us = 500000UL / frecuencia;
-	uint32_t tiempo_total_us = (uint32_t)duracion_ms * 1000UL;
-	uint32_t tiempo_transcurrido = 0;
+    // Buzzer: PD3 salida.
+    DDRD |= (1 << BUZZER_PIN);
+    PORTD &= ~(1 << BUZZER_PIN);
 
-	while (tiempo_transcurrido < tiempo_total_us)
-	{
-		PORTD |= (1 << BUZZER);
+    // Botón del joystick con resistencia pull-up.
+    DDRD &= ~(1 << JOY_SW);
+    PORTD |= (1 << JOY_SW);
 
-		uint32_t espera = semiperiodo_us;
-		while (espera >= 10)
-		{
-			_delay_us(10);
-			espera -= 10;
-		}
+    // Entradas analógicas A0 y A1.
+    DDRC &= ~((1 << JOY_X) | (1 << JOY_Y));
 
-		PORTD &= ~(1 << BUZZER);
+    // ADC habilitado, prescaler 128.
+    ADMUX = (1 << REFS0);
+    ADCSRA = (1 << ADEN) |
+             (1 << ADPS2) |
+             (1 << ADPS1) |
+             (1 << ADPS0);
 
-		espera = semiperiodo_us;
-		while (espera >= 10)
-		{
-			_delay_us(10);
-			espera -= 10;
-		}
+    // Inicializar semilla a partir de lecturas del ADC.
+    ADMUX = (1 << REFS0) | JOY_X;
 
-		tiempo_transcurrido += 2UL * semiperiodo_us;
-	}
-
-	PORTD &= ~(1 << BUZZER);
-}
-
-
-void sonido_color(uint8_t color)
-{
-    switch (color)
+    for (uint8_t i = 0; i < 8; i++)
     {
-        case ROJO:
-            buzzer_tono(440, 120);
-            break;
+        ADCSRA |= (1 << ADSC);
+        while (ADCSRA & (1 << ADSC))
+            ;
 
-        case VERDE:
-            buzzer_tono(554, 120);
-            break;
-
-        case AZUL:
-            buzzer_tono(659, 120);
-            break;
-
-        case AMARILLO:
-            buzzer_tono(784, 120);
-            break;
-
-        default:
-            break;
-    }
-}
-
-//eeprom
-void cargar_record(void)
-{
-    if (eeprom_read_byte(&ee_marca) == EEPROM_MARCA)
-    {
-        record = eeprom_read_byte(&ee_record);
-    }
-    else
-    {
-        record = 0;
-
-        eeprom_update_byte(&ee_record, record);
-        eeprom_update_byte(&ee_marca, EEPROM_MARCA);
-    }
-}
-
-void guardar_record(void)
-{
-    eeprom_update_byte(&ee_record, record);
-    eeprom_update_byte(&ee_marca, EEPROM_MARCA);
-}
-
-//matriz(provisional)
-
-/*
- * Estas funciones son temporales.
- * No controlan fisicamente la matriz todavia.
- * Las implementaremos cuando sepamos el modelo exacto.
- */
-
-/* Matriz 8x8: filas activas en LOW y columnas en HIGH */
-
-void matriz_inicializar(void)
-{
-	uint8_t i;
-
-	for (i = 0; i < 8; i++)
-	{
-		pin_salida(pines_filas[i]);
-		pin_salida(pines_columnas[i]);
-
-		/* Apagar filas y columnas al iniciar */
-		pin_escribir(pines_filas[i], 1);
-		pin_escribir(pines_columnas[i], 0);
-	}
-
-	/* Timer2: interrupcion cada 1 ms */
-	TCCR2A = (1 << WGM21);
-	TCCR2B = (1 << CS22);
-	OCR2A = 249;
-	TIMSK2 = (1 << OCIE2A);
-
-	sei();
-}
-
-void matriz_limpiar(void)
-{
-	uint8_t x, y;
-
-	for (y = 0; y < 8; y++)
-	{
-		for (x = 0; x < 8; x++)
-		{
-			imagen[y][x] = 0;
-		}
-	}
-}
-
-void matriz_pixel(uint8_t x, uint8_t y, uint8_t color)
-{
-	(void)color;
-
-	if (x < 8 && y < 8)
-	{
-		imagen[y][x] = 1;
-	}
-}
-
-void matriz_actualizar_cursor(void)
-{
-	matriz_limpiar();
-	matriz_pixel(cursor_x, cursor_y, color_cursor);
-}
-
-/* Refresco de una fila por interrupcion */
-ISR(TIMER2_COMPA_vect)
-{
-	uint8_t x;
-
-	/* Apagar todas las filas */
-	for (x = 0; x < 8; x++)
-	{
-		pin_escribir(pines_filas[x], 1);
-	}
-
-	/* Preparar las columnas de la fila actual */
-	for (x = 0; x < 8; x++)
-	{
-		pin_escribir(
-		pines_columnas[x],
-		imagen[fila_actual][x]
-		);
-	}
-
-	/* Activar solamente la fila actual */
-	pin_escribir(pines_filas[fila_actual], 0);
-
-	fila_actual++;
-
-	if (fila_actual >= 8)
-	{
-		fila_actual = 0;
-	}
-}
-void animacion_exito(void)
-{
-    buzzer_tono(1000, 100);
-    _delay_ms(100);
-    buzzer_tono(1500, 150);
-    _delay_ms(200);
-}
-
-void animacion_error(void)
-{
-    for (uint8_t i = 0; i < 3; i++)
-    {
-        matriz_limpiar();
-
-        /* El rojo de toda la matriz se agregara despues */
-        buzzer_tono(150, 250);
-
-        _delay_ms(150);
+        semilla ^= (uint8_t)ADC;
     }
 
-    matriz_limpiar();
+    if (semilla == 0)
+        semilla = 37;
+
+    matrizLimpiar();
+    cargarJuego();
 }
 
-void pin_salida(uint8_t pin)
-{
-	if (pin <= 7)
-	{
-		DDRD |= (1 << pin);
-	}
-	else if (pin <= 13)
-	{
-		DDRB |= (1 << (pin - 8));
-	}
-	else if (pin <= 19)
-	{
-		DDRC |= (1 << (pin - 14));
-	}
-}
+/* =====================================================
+   PROGRAMA PRINCIPAL
+   ===================================================== */
 
-void pin_escribir(uint8_t pin, uint8_t valor)
+int main(void)
 {
-	if (pin <= 7)
-	{
-		if (valor)
-		PORTD |= (1 << pin);
-		else
-		PORTD &= ~(1 << pin);
-	}
-	else if (pin <= 13)
-	{
-		if (valor)
-		PORTB |= (1 << (pin - 8));
-		else
-		PORTB &= ~(1 << (pin - 8));
-	}
-	else if (pin <= 19)
-	{
-		if (valor)
-		PORTC |= (1 << (pin - 14));
-		else
-		PORTC &= ~(1 << (pin - 14));
-	}
+    inicializar();
+
+    while (1)
+    {
+        if (estado == MODO_LIBRE)
+        {
+            moverCursor();
+
+            uint8_t boton = (PIND & (1 << JOY_SW)) ? 1 : 0;
+
+            if (boton == 0 && botonAnterior == 1)
+            {
+                tiempoPulsado = 0;
+
+                while (!(PIND & (1 << JOY_SW)))
+                {
+                    esperar_ms(10);
+
+                    if (tiempoPulsado < 2000)
+                        tiempoPulsado += 10;
+                }
+
+                if (tiempoPulsado >= 1000)
+                {
+                    iniciarJuego();
+                }
+                else
+                {
+                    colorCursor = (aleatorio() % 4);
+
+                    matrizCursor();
+                    guardarJuego();
+                }
+            }
+
+            botonAnterior = boton;
+            matrizCursor();
+        }
+        else if (estado == MOSTRAR)
+        {
+            mostrarSecuencia();
+        }
+        else if (estado == TURNO_JUGADOR)
+        {
+            moverCursor();
+
+            if (!(PIND & (1 << JOY_SW)))
+            {
+                esperar_ms(30);
+
+                if (!(PIND & (1 << JOY_SW)))
+                {
+                    comprobarPosicion();
+
+                    while (!(PIND & (1 << JOY_SW)))
+                        ;
+
+                    esperar_ms(30);
+                }
+            }
+
+            if (estado == EXITO)
+                procesarExito();
+
+            if (estado == ERROR_JUEGO)
+                procesarError();
+        }
+        else if (estado == EXITO)
+        {
+            procesarExito();
+        }
+        else if (estado == ERROR_JUEGO)
+        {
+            procesarError();
+        }
+    }
 }
