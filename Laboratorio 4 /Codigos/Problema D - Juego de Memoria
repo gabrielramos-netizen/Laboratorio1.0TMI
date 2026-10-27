@@ -1,5 +1,4 @@
 
-
 #define F_CPU 16000000UL
 
 #include <avr/io.h>
@@ -8,34 +7,48 @@
 #include <util/delay.h>
 #include <stdint.h>
 
-//pines
+/* =====================================================
+   JUEGO DE MEMORIA - ATmega328P
+   Matriz WS2812B RGB 8x8
+   Joystick KY-023
+   Buzzer
+   EEPROM para guardar nivel y record
+   ===================================================== */
 
-// Matriz WS2812B
-#define LED_DDR   DDRD
-#define LED_PORT  PORTD
-#define LED_PIN   PD6
+/* ---------------- PINES ---------------- */
 
+// Matriz WS2812B: DIN conectado a PD6 (Arduino D6)
+#define LED_DDR    DDRD
+#define LED_PORT   PORTD
+#define LED_PIN    PD6
+#define NOP() __asm__ volatile ("nop")
 // Joystick
-#define JOY_X     PC0       // A0
-#define JOY_Y     PC1       // A1
-#define JOY_SW    PD2       // D2
+#define JOY_X      PC0       // A0
+#define JOY_Y      PC1       // A1
+#define JOY_SW     PD2       // D2
 
 // Buzzer
-#define BUZZER_PIN PD3      // D3
+#define BUZZER_PIN PD3       // D3
 
 #define TOTAL_LEDS 64
 #define MAX_SECUENCIA 64
+
+/* ---------------- COLORES ---------------- */
 
 #define ROJO       0
 #define VERDE      1
 #define AZUL       2
 #define AMARILLO   3
 
+/* ---------------- ESTADOS ---------------- */
+
 #define MODO_LIBRE      0
 #define MOSTRAR         1
 #define TURNO_JUGADOR   2
 #define EXITO           3
 #define ERROR_JUEGO     4
+
+/* ---------------- ESTRUCTURAS ---------------- */
 
 typedef struct
 {
@@ -58,7 +71,7 @@ typedef struct
     Elemento secuencia[MAX_SECUENCIA];
 } DatosGuardados;
 
-//variables
+/* ---------------- VARIABLES ---------------- */
 
 static Elemento secuencia[MAX_SECUENCIA];
 
@@ -77,13 +90,15 @@ static uint8_t semilla = 37;
 static uint8_t botonAnterior = 1;
 static uint16_t tiempoPulsado = 0;
 
-//Eeprom
+/* ---------------- EEPROM ---------------- */
 
 #define MARCA_EEPROM 0xA65C
 
 DatosGuardados EEMEM memoriaJuego;
 
-//buzzer
+/* =====================================================
+   CONTROL DE BUZZER
+   ===================================================== */
 
 static void esperar_ms(uint16_t ms)
 {
@@ -132,65 +147,87 @@ static void sonidoColor(uint8_t color)
     }
 }
 
-//matriz
+/* =====================================================
+   MATRIZ WS2812B
+   Orden de datos: GRB
+   ===================================================== */
 
 static void ws2812_enviarByte(uint8_t dato)
 {
-    for (uint8_t i = 0; i < 8; i++)
-    {
-        if (dato & 0x80)
-        {
-            LED_PORT |= (1 << LED_PIN);
-            _delay_us(0.65);
+	// Valores precalculados del puerto: así cada cambio de línea es una sola instrucción "out"
+	uint8_t alto = LED_PORT | (1 << LED_PIN);
+	uint8_t bajo = LED_PORT & ~(1 << LED_PIN);
 
-            LED_PORT &= ~(1 << LED_PIN);
-            _delay_us(0.55);
-        }
-        else
-        {
-            LED_PORT |= (1 << LED_PIN);
-            _delay_us(0.30);
+	for (uint8_t i = 0; i < 8; i++)
+	{
+		if (dato & 0x80)
+		{
+			// Bit 1: pulso alto ~750 ns (12 ciclos a 16 MHz)
+			LED_PORT = alto;
+			NOP(); NOP(); NOP(); NOP(); NOP(); NOP();
+			NOP(); NOP(); NOP(); NOP(); NOP();
+			LED_PORT = bajo;
+			NOP(); NOP();
+		}
+		else
+		{
+			// Bit 0: pulso alto ~375 ns (6 ciclos)
+			LED_PORT = alto;
+			NOP(); NOP(); NOP(); NOP(); NOP();
+			LED_PORT = bajo;
+			NOP(); NOP(); NOP(); NOP();
+			NOP(); NOP(); NOP(); NOP();
+		}
 
-            LED_PORT &= ~(1 << LED_PIN);
-            _delay_us(0.90);
-        }
-
-        dato <<= 1;
-    }
+		dato <<= 1;
+	}
 }
-
-static void ws2812_enviarColor(uint8_t rojo,
-                              uint8_t verde,
-                              uint8_t azul)
+static void ws2812_enviarColor(uint8_t rojo, uint8_t verde, uint8_t azul)
 {
-    uint8_t interrupciones = SREG;
-    cli();
-
     // El WS2812B recibe los componentes en orden GRB.
     ws2812_enviarByte(verde);
     ws2812_enviarByte(rojo);
     ws2812_enviarByte(azul);
-
-    SREG = interrupciones;
 }
 
 static void matrizMostrar(void)
 {
-    _delay_us(80);
+    LED_PORT &= ~(1 << LED_PIN);
+    _delay_us(60);
 }
 
 static void matrizLimpiar(void)
 {
-    for (uint8_t i = 0; i < TOTAL_LEDS; i++)
-        ws2812_enviarColor(0, 0, 0);
+    uint8_t interrupciones = SREG;
+    cli();
 
+    for (uint8_t i = 0; i < TOTAL_LEDS; i++)
+    {
+        ws2812_enviarColor(0, 0, 0);
+    }
+
+    SREG = interrupciones;
     matrizMostrar();
 }
 
-static void colorRGB(uint8_t color,
-                     uint8_t *rojo,
-                     uint8_t *verde,
-                     uint8_t *azul)
+static void matrizRellenar(uint8_t rojo, uint8_t verde, uint8_t azul)
+{
+    uint8_t interrupciones = SREG;
+    cli();
+
+    for (uint8_t i = 0; i < TOTAL_LEDS; i++)
+    {
+        ws2812_enviarColor(rojo, verde, azul);
+    }
+
+    SREG = interrupciones;
+    matrizMostrar();
+}
+
+/*
+   Esta función debe estar definida ANTES de matrizPixel
+*/
+static void colorRGB(uint8_t color, uint8_t *rojo, uint8_t *verde, uint8_t *azul)
 {
     switch (color)
     {
@@ -226,15 +263,6 @@ static void colorRGB(uint8_t color,
     }
 }
 
-/*
-   Indexación lógica:
-   x = columna (0 a 7)
-   y = fila (0 a 7)
-
-   Si la orientación física de la matriz es diferente,
-   habrá que adaptar este cálculo.
-*/
-
 static void matrizPixel(uint8_t x, uint8_t y, uint8_t color)
 {
     if (x > 7 || y > 7)
@@ -265,6 +293,9 @@ static void matrizCursor(void)
     matrizPixel(cursorX, cursorY, colorCursor);
 }
 
+/* =====================================================
+   GENERADOR PSEUDOALEATORIO
+   ===================================================== */
 
 static uint8_t aleatorio(void)
 {
@@ -291,7 +322,9 @@ static void generarNuevoElemento(void)
     }
 }
 
-//guardado y recuperacion de eeprom
+/* =====================================================
+   GUARDADO Y RECUPERACIÓN EEPROM
+   ===================================================== */
 
 static void guardarJuego(void)
 {
@@ -356,7 +389,9 @@ static void cargarJuego(void)
     }
 }
 
-//juego
+/* =====================================================
+   JUEGO
+   ===================================================== */
 
 static void iniciarJuego(void)
 {
@@ -395,12 +430,7 @@ static void mostrarSecuencia(void)
 
 static void procesarExito(void)
 {
-    matrizLimpiar();
-
-    for (uint8_t i = 0; i < TOTAL_LEDS; i++)
-        ws2812_enviarColor(0, 100, 0);
-
-    matrizMostrar();
+    matrizRellenar(0, 100, 0);      // toda la matriz en verde
     buzzer(880, 180);
     esperar_ms(200);
 
@@ -421,11 +451,7 @@ static void procesarError(void)
 {
     for (uint8_t i = 0; i < 3; i++)
     {
-        // Iluminar la matriz en rojo.
-        for (uint8_t j = 0; j < TOTAL_LEDS; j++)
-            ws2812_enviarColor(100, 0, 0);
-
-        matrizMostrar();
+        matrizRellenar(100, 0, 0);  // toda la matriz en rojo
         buzzer(150, 200);
 
         matrizLimpiar();
@@ -463,29 +489,24 @@ static void comprobarPosicion(void)
     guardarJuego();
 }
 
-//joystick
+/* =====================================================
+   JOYSTICK
+   ===================================================== */
 
 static void moverCursor(void)
 {
-    uint16_t x = ADC;
-    uint16_t y;
+    uint16_t x, y;
 
     // Leer eje X.
     ADMUX = (ADMUX & 0xF0) | JOY_X;
     ADCSRA |= (1 << ADSC);
-
-    while (ADCSRA & (1 << ADSC))
-        ;
-
+    while (ADCSRA & (1 << ADSC));
     x = ADC;
 
     // Leer eje Y.
     ADMUX = (ADMUX & 0xF0) | JOY_Y;
     ADCSRA |= (1 << ADSC);
-
-    while (ADCSRA & (1 << ADSC))
-        ;
-
+    while (ADCSRA & (1 << ADSC));
     y = ADC;
 
     uint8_t movio = 0;
@@ -519,6 +540,9 @@ static void moverCursor(void)
     }
 }
 
+/* =====================================================
+   INICIALIZACIÓN
+   ===================================================== */
 
 static void inicializar(void)
 {
@@ -550,8 +574,7 @@ static void inicializar(void)
     for (uint8_t i = 0; i < 8; i++)
     {
         ADCSRA |= (1 << ADSC);
-        while (ADCSRA & (1 << ADSC))
-            ;
+        while (ADCSRA & (1 << ADSC));
 
         semilla ^= (uint8_t)ADC;
     }
@@ -563,6 +586,9 @@ static void inicializar(void)
     cargarJuego();
 }
 
+/* =====================================================
+   PROGRAMA PRINCIPAL
+   ===================================================== */
 
 int main(void)
 {
@@ -602,7 +628,6 @@ int main(void)
             }
 
             botonAnterior = boton;
-            matrizCursor();
         }
         else if (estado == MOSTRAR)
         {
@@ -620,8 +645,7 @@ int main(void)
                 {
                     comprobarPosicion();
 
-                    while (!(PIND & (1 << JOY_SW)))
-                        ;
+                    while (!(PIND & (1 << JOY_SW)));
 
                     esperar_ms(30);
                 }
