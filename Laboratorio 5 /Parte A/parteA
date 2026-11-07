@@ -1,1 +1,62 @@
+// LABORATORIO 5 - PROBLEMA B: GESTIÓN ENERGÉTICA, WDT Y COMUNICACIÓN BLUETOOTH
 
+#define F_CPU 16000000UL
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <avr/sleep.h>
+#include <avr/wdt.h>
+#include <avr/power.h>
+#include <util/delay.h>
+
+// Definición de la dirección I2C por defecto del módulo LCD
+#ifndef PCF8574
+#define PCF8574 0x27
+#endif
+
+#include "twi.h"
+#include "twi_lcd.h"
+
+// Constantes para la administración del búfer serie y el protocolo de tramas
+#define BUFFER_SIZE 32
+#define HEADER_BYTE 0xAA
+#define FOOTER_BYTE 0x55
+
+// Definición de tipo para implementar la máquina de estados con punteros a función
+typedef void (*EstadoFuncion_t)(void);
+
+// Prototipos de las funciones de estado
+void st_activo(void);
+void st_standby(void);
+void st_apagado(void);
+
+// Variables de estado y puntero a la función actual
+volatile EstadoFuncion_t estado_actual = st_activo;
+volatile uint8_t codigo_estado_actual = 0;
+
+// Variables de control de tiempo y eventos compartidas con interrupciones
+volatile uint32_t contador_segundos_inactividad = 0;
+volatile uint8_t bandera_wdt_despertador = 0;
+
+// Búfer circular de recepción para el puerto USART
+volatile uint8_t rx_buffer[BUFFER_SIZE];
+volatile uint8_t rx_head = 0;
+volatile uint8_t rx_tail = 0;
+
+// Inicialización de la comunicación serie USART a 9600 baudios
+void USART_Init(unsigned int ubrr) {
+	UBRR0H = (unsigned char)(ubrr >> 8);
+	UBRR0L = (unsigned char)ubrr;
+	UCSR0B = (1 << RXEN0) | (1 << TXEN0) | (1 << RXCIE0);
+	UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
+}
+
+// Transmisión de un byte por la interfaz USART
+void USART_Transmit(unsigned char data) {
+	while (!(UCSR0A & (1 << UDRE0)));
+	UDR0 = data;
+}
+
+int main(){
+
+    while(1); 
+}
