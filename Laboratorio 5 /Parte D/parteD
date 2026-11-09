@@ -9,7 +9,7 @@
 // 1 ADC NOISE REDUCTION
 // 2 POWER-DOWN
 
-#define MODO_SLEEP 0
+#define MODO_SLEEP 2
 
 volatile uint8_t despertar = 0;
 
@@ -29,7 +29,10 @@ ISR(ADC_vect)
 int main(void)
 {
 
+	DDRB |= (1 << PB0);
 
+	// Apagar LED inicialmente
+	PORTB &= ~(1 << PB0);
 
 	#if MODO_SLEEP == 0
 
