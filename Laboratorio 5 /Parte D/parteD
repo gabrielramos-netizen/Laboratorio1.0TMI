@@ -1,0 +1,147 @@
+#define F_CPU 16000000UL
+
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <avr/sleep.h>
+#include <util/delay.h>
+
+// 0 IDLE
+// 1 ADC NOISE REDUCTION
+// 2 POWER-DOWN
+
+#define MODO_SLEEP 0
+
+volatile uint8_t despertar = 0;
+
+
+ISR(INT0_vect)
+{
+	despertar = 1;
+}
+
+// Interrupcion de finalizacion del ADC
+ISR(ADC_vect)
+{
+	despertar = 1;
+}
+
+
+int main(void)
+{
+
+
+
+	#if MODO_SLEEP == 0
+
+
+	DDRD &= ~(1 << PD2);
+	PORTD |= (1 << PD2);
+
+	// INT0 por flanco descendente
+	EICRA &= ~(1 << ISC00);
+	EICRA |= (1 << ISC01);
+
+	EIFR = (1 << INTF0);
+	EIMSK |= (1 << INT0);
+
+	set_sleep_mode(SLEEP_MODE_IDLE);
+
+	#elif MODO_SLEEP == 1
+
+	// MODO ADC NOISE REDUCTION
+
+	// Referencia AVcc y entrada ADC0 (A0)
+	ADMUX = (1 << REFS0);
+
+	// Habilitar ADC, interrupcion y prescaler 128
+	ADCSRA = (1 << ADEN) |
+	(1 << ADIE) |
+	(1 << ADPS2) |
+	(1 << ADPS1) |
+	(1 << ADPS0);
+
+	set_sleep_mode(SLEEP_MODE_ADC);
+
+	#elif MODO_SLEEP == 2
+
+	// MODO POWER-DOWN
+
+	DDRD &= ~(1 << PD2);
+	PORTD |= (1 << PD2);
+
+	// INT0 por nivel bajo
+	EICRA &= ~((1 << ISC01) | (1 << ISC00));
+
+	EIFR = (1 << INTF0);
+	EIMSK |= (1 << INT0);
+
+	set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+
+	#else
+	#error "Seleccion de modo Sleep incorrecta"
+	#endif
+
+	sei();
+
+
+
+	while (1)
+	{
+		despertar = 0;
+
+		#if MODO_SLEEP == 0 || MODO_SLEEP == 2
+		while (!(PIND & (1 << PD2)))
+		{
+		}
+
+		_delay_ms(20);
+
+		cli();
+
+		// Limpiar interrupcion pendiente
+		EIFR = (1 << INTF0);
+
+		sleep_enable();
+
+		sei();
+		sleep_cpu();
+
+		sleep_disable();
+
+		// Si desperto por INT0, cambiar LED
+		if (despertar)
+		{
+			PORTB ^= (1 << PB0);
+		}
+
+		// Esperar que se suelte el pulsador
+		while (!(PIND & (1 << PD2)))
+		{
+		}
+
+		_delay_ms(20);
+
+		#elif MODO_SLEEP == 1
+
+		// Iniciar conversion ADC
+		cli();
+
+		ADCSRA |= (1 << ADSC);
+
+		sleep_enable();
+
+		sei();
+		sleep_cpu();
+
+		sleep_disable();
+
+		// Al terminar la conversion, cambiar LED
+		if (despertar)
+		{
+			PORTB ^= (1 << PB0);
+			_delay_ms(500);
+		}
+
+		#endif
+	}
+}
