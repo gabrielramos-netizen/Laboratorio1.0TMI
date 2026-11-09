@@ -1,0 +1,68 @@
+#define F_CPU 16000000UL
+
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <avr/sleep.h>
+
+volatile uint8_t despertar = 0;
+
+ISR(INT0_vect)
+{
+    despertar = 1;
+}
+
+int main(void)
+{
+    // LED en D8 (PB0)
+    DDRB |= (1 << PB0);
+    PORTB &= ~(1 << PB0);
+
+    // Pulsador en D2 (PD2), usando pull-up
+    DDRD &= ~(1 << PD2);
+    PORTD |= (1 << PD2);
+
+    // INT0 activada por nivel bajo
+    EICRA &= ~((1 << ISC01) | (1 << ISC00));
+
+    // Limpiar interrupcion pendiente
+    EIFR = (1 << INTF0);
+
+    // Habilitar INT0
+    EIMSK |= (1 << INT0);
+
+    // Seleccionar Power-Down
+    set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+
+    sei();
+
+    while (1)
+    {
+        // Esperar a que el boton este liberado
+        while (!(PIND & (1 << PD2)))
+        {
+        }
+
+        despertar = 0;
+
+        cli();
+
+        EIFR = (1 << INTF0);
+        sleep_enable();
+
+        sei();
+        sleep_cpu();
+
+        sleep_disable();
+
+        if (despertar)
+        {
+            PORTB ^= (1 << PB0);
+        }
+
+        // Esperar a que se suelte el boton
+        while (!(PIND & (1 << PD2)))
+        {
+        }
+    }
+}
+
