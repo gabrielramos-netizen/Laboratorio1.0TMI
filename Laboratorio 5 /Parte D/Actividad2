@@ -1,0 +1,107 @@
+#define F_CPU 16000000UL
+
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <avr/sleep.h>
+
+#define PRUEBA 0
+
+volatile uint8_t despertar = 0;
+
+//interrupcion
+ISR(INT0_vect)
+{
+	despertar = 1;
+}
+
+int main(void)
+{
+
+//perifericos
+	PRR &= ~((1 << PRADC)    |
+	(1 << PRUSART0) |
+	(1 << PRSPI)    |
+	(1 << PRTIM0)   |
+	(1 << PRTIM1)   |
+	(1 << PRTIM2)   |
+	(1 << PRTWI));
+
+	#if PRUEBA == 0
+
+	#elif PRUEBA == 1
+
+	PRR |= (1 << PRADC);
+
+	#elif PRUEBA == 2
+
+	PRR |= (1 << PRUSART0);
+
+	#elif PRUEBA == 3
+
+	PRR |= (1 << PRSPI);
+
+	#elif PRUEBA == 4
+
+	PRR |= (1 << PRTIM0);
+
+	#elif PRUEBA == 5
+
+	PRR |= (1 << PRTIM1);
+
+	#elif PRUEBA == 6
+
+	PRR |= (1 << PRTIM2);
+
+	#elif PRUEBA == 7
+
+	PRR |= (1 << PRTWI);
+
+	#elif PRUEBA == 8
+
+	// Desactivar ADC, USART0 y SPI
+	PRR |= (1 << PRADC) |
+	(1 << PRUSART0) |
+	(1 << PRSPI);
+
+	#else
+
+	#error "Seleccion de prueba incorrecta"
+
+	#endif
+
+
+//boton
+	DDRD &= ~(1 << PD2); 
+	PORTD |= (1 << PD2);   
+
+	// INT0 
+	EICRA &= ~(1 << ISC00);
+	EICRA |= (1 << ISC01);
+
+	EIFR = (1 << INTF0);
+	EIMSK |= (1 << INT0);
+
+
+	set_sleep_mode(SLEEP_MODE_IDLE); // seleccionar idle
+
+	sei();
+
+
+	while (1)
+	{
+		cli();
+
+		sleep_enable();
+
+		sei();
+
+		sleep_cpu();
+
+		sleep_disable();
+
+		if (despertar)
+		{
+			despertar = 0;
+		}
+	}
+}
