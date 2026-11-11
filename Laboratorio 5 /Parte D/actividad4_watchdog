@@ -1,0 +1,135 @@
+
+
+#define F_CPU 16000000UL
+
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <avr/sleep.h>
+#include <avr/wdt.h>
+#include <util/delay.h>
+
+
+//
+// MODO_WDT:
+// 0 = Interrupcion
+// 1 = Reset
+//
+// INTERVALO_WDT:
+// 0 = 16 ms nominales
+// 1 = 250 ms
+// 2 = 1 segundo
+// 3 = 8 segundos
+//
+
+#define MODO_WDT 0
+#define INTERVALO_WDT 0
+
+#if INTERVALO_WDT == 0
+
+#define WDT_BITS 0
+
+#elif INTERVALO_WDT == 1
+
+#define WDT_BITS (1 << WDP2)
+
+#elif INTERVALO_WDT == 2
+
+#define WDT_BITS ((1 << WDP2) | (1 << WDP1))
+
+#elif INTERVALO_WDT == 3
+
+#define WDT_BITS ((1 << WDP3) | (1 << WDP0))
+
+#else
+
+#error "Intervalo WDT incorrecto"
+
+#endif
+
+//interrupcion de watchdog
+
+ISR(WDT_vect)
+{
+	// Cambiar estado del LED D8
+	PORTB ^= (1 << PB0);
+}
+
+int main(void)
+{
+	// Configurar D8 como salida
+	DDRB |= (1 << PB0);
+	PORTB &= ~(1 << PB0);
+
+	// Desactivar watchdog anterior y limpiar
+	// la bandera de reset por watchdog
+	cli();
+
+	MCUSR &= ~(1 << WDRF);
+
+	wdt_disable();
+
+	sei();
+
+
+	#if MODO_WDT == 0
+
+	cli();
+
+	// Secuencia de habilitacion del WDT
+	WDTCSR = (1 << WDCE) | (1 << WDE);
+
+	// Interrupcion sin reset
+	WDTCSR = (1 << WDIF) |
+	(1 << WDIE) |
+	WDT_BITS;
+
+	sei();
+
+	set_sleep_mode(SLEEP_MODE_IDLE);
+
+	while (1)
+	{
+		sleep_enable();
+		sleep_cpu();
+		sleep_disable();
+	}
+
+
+
+	#elif MODO_WDT == 1
+
+	// Destello al iniciar el programa
+	PORTB |= (1 << PB0);
+	_delay_ms(200);
+	PORTB &= ~(1 << PB0);
+
+	// Configurar Watchdog en modo reset
+	#if INTERVALO_WDT == 0
+
+	wdt_enable(WDTO_15MS);
+
+	#elif INTERVALO_WDT == 1
+
+	wdt_enable(WDTO_250MS);
+
+	#elif INTERVALO_WDT == 2
+
+	wdt_enable(WDTO_1S);
+
+	#elif INTERVALO_WDT == 3
+
+	wdt_enable(WDTO_8S);
+
+	#endif
+
+	// El microcontrolador espera el reset
+	while (1)
+	{
+	}
+
+	#else
+
+	#error "Modo WDT incorrecto"
+
+	#endif
+}
