@@ -9,34 +9,36 @@
 // 1 ADC NOISE REDUCTION
 // 2 POWER-DOWN
 
-#define MODO_SLEEP 2
+#define MODO_SLEEP 0
 
 volatile uint8_t despertar = 0;
-
 
 ISR(INT0_vect)
 {
 	despertar = 1;
 }
 
-// Interrupcion de finalizacion del ADC
 ISR(ADC_vect)
 {
 	despertar = 1;
 }
 
-
 int main(void)
 {
-
+	// Configurar LED en PB0 como salida
 	DDRB |= (1 << PB0);
-
-	// Apagar LED inicialmente
 	PORTB &= ~(1 << PB0);
+
+
+	for (uint8_t i = 0; i < 6; i++) {  //para que no se bloquee en sleep+
+		PORTB ^= (1 << PB0);
+		_delay_ms(250);
+	}
+	PORTB &= ~(1 << PB0); // Apagar LED al terminar la ventana
 
 	#if MODO_SLEEP == 0
 
-
+	// pd2 entrada con pull up
 	DDRD &= ~(1 << PD2);
 	PORTD |= (1 << PD2);
 
@@ -49,14 +51,11 @@ int main(void)
 
 	set_sleep_mode(SLEEP_MODE_IDLE);
 
-	#elif MODO_SLEEP == 1
+	#elif MODO_SLEEP == 1 //adc noise redution 
 
-	// MODO ADC NOISE REDUCTION
+	ADMUX = (1 << REFS0); // Referencia AVcc y entrada ADC0 (A0)
 
-	// Referencia AVcc y entrada ADC0 (A0)
-	ADMUX = (1 << REFS0);
-
-	// Habilitar ADC, interrupcion y prescaler 128
+	// Habilitar ADC, interrupción y prescaler 128
 	ADCSRA = (1 << ADEN) |
 	(1 << ADIE) |
 	(1 << ADPS2) |
@@ -68,7 +67,6 @@ int main(void)
 	#elif MODO_SLEEP == 2
 
 	// MODO POWER-DOWN
-
 	DDRD &= ~(1 << PD2);
 	PORTD |= (1 << PD2);
 
@@ -86,59 +84,52 @@ int main(void)
 
 	sei();
 
-
-
 	while (1)
 	{
 		despertar = 0;
 
 		#if MODO_SLEEP == 0 || MODO_SLEEP == 2
-		while (!(PIND & (1 << PD2)))
+		
+		// Esperar a que el pulsador esté presionado (nivel bajo en PD2)
+		while (PIND & (1 << PD2))
 		{
 		}
 
-		_delay_ms(20);
+		_delay_ms(20); // Antirebote
 
 		cli();
-
-		// Limpiar interrupcion pendiente
+		// Limpiar interrupción pendiente
 		EIFR = (1 << INTF0);
 
 		sleep_enable();
-
 		sei();
 		sleep_cpu();
-
 		sleep_disable();
 
-		// Si desperto por INT0, cambiar LED
+		// Si despertó por INT0, cambiar estado del LED
 		if (despertar)
 		{
 			PORTB ^= (1 << PB0);
 		}
 
-		// Esperar que se suelte el pulsador
+		// Esperar que se suelte el pulsador antes de volver a empezar
 		while (!(PIND & (1 << PD2)))
 		{
 		}
 
-		_delay_ms(20);
+		_delay_ms(20); // Antirebote
 
 		#elif MODO_SLEEP == 1
 
-		// Iniciar conversion ADC
+		// Iniciar conversión ADC
 		cli();
-
 		ADCSRA |= (1 << ADSC);
-
 		sleep_enable();
-
 		sei();
 		sleep_cpu();
-
 		sleep_disable();
 
-		// Al terminar la conversion, cambiar LED
+		// Al terminar la conversión, cambiar LED
 		if (despertar)
 		{
 			PORTB ^= (1 << PB0);
@@ -147,4 +138,4 @@ int main(void)
 
 		#endif
 	}
-}
+}+++++++++++++++++++
