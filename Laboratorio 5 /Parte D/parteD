@@ -5,10 +5,9 @@
 #include <avr/sleep.h>
 #include <util/delay.h>
 
-// 0 IDLE
-// 1 ADC NOISE REDUCTION
-// 2 POWER-DOWN
-
+// 0 = IDLE
+// 1 = ADC NOISE REDUCTION
+// 2 = POWER-DOWN
 #define MODO_SLEEP 0
 
 volatile uint8_t despertar = 0;
@@ -16,6 +15,12 @@ volatile uint8_t despertar = 0;
 ISR(INT0_vect)
 {
 	despertar = 1;
+
+#if MODO_SLEEP == 2
+	// INT0 por nivel: se deshabilita hasta volver a dormir,
+	// si no la ISR se repite mientras el pulsador siga en bajo
+	EIMSK &= ~(1 << INT0);
+#endif
 }
 
 ISR(ADC_vect)
@@ -25,62 +30,54 @@ ISR(ADC_vect)
 
 int main(void)
 {
-	// Configurar LED en PB0 como salida
+	// LED en PB0 como salida
 	DDRB |= (1 << PB0);
 	PORTB &= ~(1 << PB0);
 
-
-	for (uint8_t i = 0; i < 6; i++) {  //para que no se bloquee en sleep+
+	// Ventana inicial de 1,5 s para poder reprogramar
+	for (uint8_t i = 0; i < 6; i++) {
 		PORTB ^= (1 << PB0);
 		_delay_ms(250);
 	}
-	PORTB &= ~(1 << PB0); // Apagar LED al terminar la ventana
+	PORTB &= ~(1 << PB0);
 
-	#if MODO_SLEEP == 0
-
-	// pd2 entrada con pull up
+#if MODO_SLEEP == 0
+	// IDLE: INT0 por flanco descendente
 	DDRD &= ~(1 << PD2);
 	PORTD |= (1 << PD2);
 
-	// INT0 por flanco descendente
 	EICRA &= ~(1 << ISC00);
 	EICRA |= (1 << ISC01);
-
 	EIFR = (1 << INTF0);
 	EIMSK |= (1 << INT0);
 
 	set_sleep_mode(SLEEP_MODE_IDLE);
 
-	#elif MODO_SLEEP == 1 //adc noise redution 
+#elif MODO_SLEEP == 1
+	// ADC NOISE REDUCTION
+	DDRB |= (1 << PB1);          // pin de prueba (referencia del osciloscopio)
+	PORTB &= ~(1 << PB1);
 
-	ADMUX = (1 << REFS0); // Referencia AVcc y entrada ADC0 (A0)
-
-	// Habilitar ADC, interrupción y prescaler 128
-	ADCSRA = (1 << ADEN) |
-	(1 << ADIE) |
-	(1 << ADPS2) |
-	(1 << ADPS1) |
-	(1 << ADPS0);
+	ADMUX = (1 << REFS0);        // AVcc, canal ADC0
+	ADCSRA = (1 << ADEN) | (1 << ADIE) |
+	         (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);   // prescaler 128
 
 	set_sleep_mode(SLEEP_MODE_ADC);
 
-	#elif MODO_SLEEP == 2
-
-	// MODO POWER-DOWN
+#elif MODO_SLEEP == 2
+	// POWER-DOWN: INT0 por nivel bajo
 	DDRD &= ~(1 << PD2);
 	PORTD |= (1 << PD2);
 
-	// INT0 por nivel bajo
 	EICRA &= ~((1 << ISC01) | (1 << ISC00));
-
 	EIFR = (1 << INTF0);
 	EIMSK |= (1 << INT0);
 
 	set_sleep_mode(SLEEP_MODE_PWR_DOWN);
 
-	#else
-	#error "Seleccion de modo Sleep incorrecta"
-	#endif
+#else
+#error "Seleccion de modo Sleep incorrecta"
+#endif
 
 	sei();
 
@@ -88,54 +85,46 @@ int main(void)
 	{
 		despertar = 0;
 
-		#if MODO_SLEEP == 0 || MODO_SLEEP == 2
-		
-		// Esperar a que el pulsador esté presionado (nivel bajo en PD2)
-		while (PIND & (1 << PD2))
-		{
-		}
+#if MODO_SLEEP == 0 || MODO_SLEEP == 2
 
-		_delay_ms(20); // Antirebote
+		// Dormir SOLO con el pulsador suelto (nivel alto)
+		while (!(PIND & (1 << PD2))) {}
+		_delay_ms(20);                       // antirrebote
 
 		cli();
-		// Limpiar interrupción pendiente
-		EIFR = (1 << INTF0);
-
+		EIFR = (1 << INTF0);                 // limpiar pendiente
+		EIMSK |= (1 << INT0);                // (re)habilitar INT0
 		sleep_enable();
 		sei();
 		sleep_cpu();
 		sleep_disable();
 
-		// Si despertó por INT0, cambiar estado del LED
+		// Primera accion observable: PB0 (canal 2 del osciloscopio)
 		if (despertar)
 		{
 			PORTB ^= (1 << PB0);
 		}
 
-		// Esperar que se suelte el pulsador antes de volver a empezar
-		while (!(PIND & (1 << PD2)))
-		{
-		}
+		_delay_ms(20);                       // antirrebote
+		while (!(PIND & (1 << PD2))) {}      // esperar que se suelte
 
-		_delay_ms(20); // Antirebote
+#elif MODO_SLEEP == 1
 
-		#elif MODO_SLEEP == 1
-
-		// Iniciar conversión ADC
 		cli();
+		PORTB |= (1 << PB1);                 // referencia: antes de la conversion
 		ADCSRA |= (1 << ADSC);
 		sleep_enable();
 		sei();
 		sleep_cpu();
 		sleep_disable();
 
-		// Al terminar la conversión, cambiar LED
 		if (despertar)
 		{
-			PORTB ^= (1 << PB0);
+			PORTB ^= (1 << PB0);             // primera accion observable
+			PORTB &= ~(1 << PB1);
 			_delay_ms(500);
 		}
 
-		#endif
+#endif
 	}
 }
