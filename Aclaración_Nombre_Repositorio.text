@@ -1,7 +1,0 @@
-Quiero aclarar algo con respecto a la devolución del laboratorio 4, cito: "El nombre del repositorio GitHub ('Laboratorio1.0TMI') resulta sospechoso de ser reciclado.", respecto a esto, yo soy el creador y dueño de este repositorio y 
-el nombre del repositorio "Laboratorio1.0TMI" solo es un nombre que le di al momento de crearlo; en su momento confundí el que un repositorio vendría a ser lo mismo que una carpeta, 
-por lo tanto creí que debia crear uno para cada laboratorio y le agregue "1.0". Posteriormente supe como crear carpetas y de ahi añadí una carpeta para cada laboratorio moviendo los archivos usando comandos con la git bash que de hecho se lo conté en persona. 
-Siempre fue el mismo repositorio para cada laboratorio que usted mismo corrigió. Si accede a las entregas anteriores verá que el link siempre lo trae aquí ya que para cada entrega usamos la misma plantilla de overleaf, 
-manteniendo los links tanto de drive, como de github. Solo modificamos lo que respecta al laboratorio abordado.
-
-Para evitar mas confusiones, cambie el nombre a "LaboratoriosTMI", dejando en claro que siempre es el mismo repositorio. A partir del laboratorio 5, el link cambiara porque ahora tienen nuevo nombre. Así, espero no haya mas confusiones con respecto a este tema.
