@@ -15,6 +15,8 @@
 
 volatile uint32_t t_ms  = 0; // Reloj general de 1 ms
 volatile uint8_t  f_buz = 0; // Bandera de pulsador/buzzer
+volatile uint16_t v_adc = 0; // Valor del potenciómetro (0-1023)
+volatile uint8_t  f_adc = 0; // Bandera de lectura analógica lista
 
 
 // =====INTERRUPCIONES (ISRs)=====
@@ -25,6 +27,15 @@ ISR(TIMER0_COMPA_vect) {
 
 ISR(INT0_vect) {
 	f_buz = 1; // Activa buzzer
+}
+
+ISR(TIMER1_COMPA_vect) {
+	ADCSRA |= (1 << ADSC); // Disparar lectura analógica cada 100 ms
+}
+
+ISR(ADC_vect) {
+	v_adc = ADC; // Lectura terminada por hardware
+	f_adc = 1;
 }
 
 
@@ -49,6 +60,18 @@ void ini_int0(void) {
 	EIMSK |= (1 << INT0);   // Habilitar INT0
 }
 
+void ini_tim1(void) {
+	TCCR1A = 0;
+	TCCR1B = (1 << WGM12) | (1 << CS11) | (1 << CS10); // Prescaler 64, Modo CTC
+	OCR1A  = 24999;                                   // 100 ms
+	TIMSK1 = (1 << OCIE1A);                           // Habilitar alarma
+}
+
+void ini_adc(void) {
+	ADMUX  = (1 << REFS0); // 5V referencia canal A0
+	ADCSRA = (1 << ADEN) | (1 << ADIE) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
+}
+
 
 //====PROGRAMA PRINCIPAL======
 
@@ -56,6 +79,8 @@ int main(void) {
 	ini_puer();
 	ini_tim0();
 	ini_int0();
+	ini_tim1();
+	ini_adc();
 
 	sei(); // Habilita interrupciones globales
 
@@ -82,6 +107,11 @@ int main(void) {
 		if (es_buz && (t_ms - t_buz >= 100)) {
 			PORTB &= ~(1 << PIN_BUZ);
 			es_buz = 0;
+		}
+
+		// Procesamiento de la bandera del ADC
+		if (f_adc == 1) {
+			f_adc = 0;
 		}
 
 	}
