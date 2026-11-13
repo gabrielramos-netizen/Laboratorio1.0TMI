@@ -1,0 +1,62 @@
+#define F_CPU 16000000UL
+
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <avr/sleep.h>
+
+ISR(INT0_vect)
+{
+    // D8 pasa a HIGH al despertar
+    PORTB |= (1 << PB0);
+
+    // Evitar interrupciones repetidas mientras el pulsador permanezca presionado
+
+    EIMSK &= ~(1 << INT0);
+}
+
+int main(void)
+{
+    // D8 como salida
+    DDRB |= (1 << PB0);
+    PORTB &= ~(1 << PB0);
+
+    // D2 como entrada con pull-up
+    DDRD &= ~(1 << PD2);
+    PORTD |= (1 << PD2);
+
+    // INT0 por nivel bajo
+    EICRA &= ~((1 << ISC01) | (1 << ISC00));
+
+    set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+
+    sei();
+
+    while (1)
+    {
+        // Esperar a que se libere el pulsador
+        while (!(PIND & (1 << PD2))) {}
+
+        // D8 en LOW antes de dormir
+        PORTB &= ~(1 << PB0);
+
+        cli();
+
+        // Limpiar bandera de interrupcion
+        EIFR = (1 << INTF0);
+
+        // Habilitar INT0
+        EIMSK |= (1 << INT0);
+
+        sleep_enable();
+
+        sei();
+
+        // Entrar en Power-Down
+        sleep_cpu();
+
+        sleep_disable();
+
+        // Esperar liberacion antes de repetir
+        while (!(PIND & (1 << PD2))) {}
+    }
+}
