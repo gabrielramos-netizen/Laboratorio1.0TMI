@@ -73,3 +73,133 @@ volatile uint8_t rx_buffer[BUFFER_SIZE];
 volatile uint8_t rx_head = 0;
 volatile uint8_t rx_tail = 0;
 volatile uint8_t ultimo_byte_rx = 0;
+
+// Se guarda el último estado dibujado en la LCD para refrescar el texto fijo solo cuando ocurre una transición real y evitar parpadeos
+static uint8_t ultimo_estado_lcd = 0xFF;
+
+// SOFTWARE UART (9600 BPS)
+// Aca se configuran los pines de la UART por software y se habilitan las interrupciones por cambio de pin en el puerto D
+void SoftUART_Init(void) {
+	// Se configura D4 como entrada con resistencia pull-up interna para mantener la línea RX en estado alto de reposo
+	DDRD &= ~(1 << BT_RX_PIN);
+	PORTD |= (1 << BT_RX_PIN);
+
+	// Se configura D5 como salida y se pone en nivel alto porque el protocolo UART mantiene el reposo en 1 lógico
+	DDRD |= (1 << BT_TX_PIN);
+	PORTD |= (1 << BT_TX_PIN);
+
+	// Se habilita el grupo de interrupciones PCINT2 para detectar pulsadores en D2/D3 y el bit de inicio en D4
+	PCICR  |= (1 << PCIE2);
+	PCMSK2 |= (1 << PCINT18) | (1 << PCINT19) | (1 << PCINT20);
+}
+
+// Aca se transmite un byte bit a bit generando manualmente los tiempos de inicio, datos y parada a 9600 bps
+void SoftUART_Transmit(uint8_t data) {
+	// Se deshabilitan temporalmente las interrupciones para que ninguna ISR altere la duración exacta de cada bit
+	uint8_t sreg = SREG;
+	cli();
+
+	// Se envía el bit de inicio (Start) llevando la línea TX a nivel bajo durante 104 us
+	PORTD &= ~(1 << BT_TX_PIN);
+	_delay_us(BIT_DELAY_US);
+
+	// Se transmiten los 8 bits de datos comenzando por el menos significativo (LSB)
+	for (uint8_t i = 0; i < 8; i++) {
+		if (data & (1 << i)) {
+			PORTD |= (1 << BT_TX_PIN);
+			} else {
+			PORTD &= ~(1 << BT_TX_PIN);
+		}
+		_delay_us(BIT_DELAY_US);
+	}
+
+	// Se envía el bit de parada (Stop) devolviendo la línea TX a nivel alto
+	PORTD |= (1 << BT_TX_PIN);
+	_delay_us(BIT_DELAY_US);
+
+	// Se restaura el estado previo de las interrupciones globales
+	SREG = sreg;
+}
+
+// WDT ISR (PRUEBA A: DESPERTADOR)
+// Aca se atiende la interrupción periódica de 8 segundos del Watchdog cuando el sistema duerme en modo Power-Down
+ISR(WDT_vect) {
+	// Solo se activa la bandera de muestreo si el microcontrolador se encuentra efectivamente en el estado APAGADO
+	if (codigo_estado_actual == 2) {
+		bandera_wdt_despertador = 1;
+	}
+}
+
+// INT0 (PD2) - DESPERTAR EN PWR_DOWN
+// Aca se captura la pulsación física por nivel bajo en D2, ya que en Power-Down los relojes están detenidos y se requiere disparo asíncrono
+ISR(INT0_vect) {
+	// Se deshabilita inmediatamente INT0 para evitar múltiples disparos mientras el dedo sigue presionando el pulsador
+	EIMSK &= ~(1 << INT0);
+	contador_segundos_inactividad = 0;
+	bandera_despertar_fsm = 1;
+}
+
+// PCINT2: PULSADORES PD2/PD3 Y RECEPCIÓN BT EN PD4
+// Aca se gestionan los cambios de estado en el puerto D para recibir tramas serie o detectar eventos de usuario
+ISR(PCINT2_vect) {
+	uint8_t estado_pind = PIND;
+
+	// 1. Recepción Bluetooth en Pin D4
+	// Se verifica si el pin D4 cayó a nivel bajo indicando el posible comienzo de un bit de inicio UART
+	if (!(estado_pind & (1 << BT_RX_PIN))) {
+		// Se espera medio tiempo de bit para muestrear exactamente en el centro y descartar ruidos breves en la línea
+		_delay_us(BIT_DELAY_US / 2);
+
+		if (!(PIND & (1 << BT_RX_PIN))) {
+			uint8_t dato = 0;
+			// Se leen los 8 bits sucesivos esperando un período completo entre cada muestra
+			for (uint8_t i = 0; i < 8; i++) {
+				_delay_us(BIT_DELAY_US);
+				if (PIND & (1 << BT_RX_PIN)) {
+					dato |= (1 << i);
+				}
+			}
+			// Se espera el bit de parada para respetar el encuadre de la trama serie
+			_delay_us(BIT_DELAY_US);
+
+			ultimo_byte_rx = dato;
+			if (dato == HEADER_BYTE) {
+				recibiendo_trama = 1;
+				} else if (dato == FOOTER_BYTE) {
+				recibiendo_trama = 0;
+			}
+
+			// Se guarda el byte recibido dentro del búfer circular siempre que exista espacio disponible
+			uint8_t next_head = (rx_head + 1) % BUFFER_SIZE;
+			if (next_head != rx_tail) {
+				rx_buffer[rx_head] = dato;
+				rx_head = next_head;
+			}
+
+			// Se limpia la bandera de interrupción acumulada durante la lectura para no reingresar por los flancos del mismo byte
+			PCIFR |= (1 << PCIF2);
+			return;
+		}
+	}
+
+	// 2. Despertar desde sueño profundo (Power-Down) por pulsador PD2
+	// Si el microcontrolador estaba dormido y ocurrió un cambio en el puerto, se solicita el retorno inmediato al estado ACTIVO
+	if (durmiendo) {
+		contador_segundos_inactividad = 0;
+		bandera_despertar_fsm = 1;
+		return;
+	}
+
+	// 3. Pulsador PD2 (Reset inactividad)
+	// Si se presiona el botón de actividad en D2, se reinicia el contador de segundos y se fuerza la vuelta a estado activo
+	if (!(estado_pind & (1 << PIND2))) {
+		contador_segundos_inactividad = 0;
+		bandera_despertar_fsm = 1;
+	}
+
+	// 4. Pulsador PD3 (Simular bloqueo de la Prueba B del WDT)
+	// Si se presiona el botón de emergencia en D3, se levanta una bandera para que el bucle principal simule un cuelgue
+	if (!(estado_pind & (1 << PIND3))) {
+		bandera_solicitud_bloqueo = 1;
+	}
+}
