@@ -1,0 +1,63 @@
+#define F_CPU 16000000UL
+
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <avr/sleep.h>
+
+// Cuando termina la conversion ADC D8 pasa a HIGH.
+
+ISR(ADC_vect)
+{
+	PORTB |= (1 << PB0);
+}
+
+int main(void)
+{
+	// D8 como salida
+	DDRB |= (1 << PB0);
+	PORTB &= ~(1 << PB0);
+
+	// D2 como entrada con pull-up
+	DDRD &= ~(1 << PD2);
+	PORTD |= (1 << PD2);
+
+	// Configuracion del ADC
+	ADMUX = (1 << REFS0);  // Referencia AVCC, canal ADC0
+
+	ADCSRA = (1 << ADEN)  |  // Habilitar ADC
+	(1 << ADIE)  |  // Habilitar interrupcion ADC
+	(1 << ADPS2) |
+	(1 << ADPS1) |
+	(1 << ADPS0);  // Prescaler 128
+
+	// Modo ADC Noise Reduction
+	set_sleep_mode(SLEEP_MODE_ADC);
+
+	sei();
+
+	while (1)
+	{
+		// Esperar hasta que se presione el pulsador
+		while (PIND & (1 << PD2)) {}
+
+		// D8 en LOW antes de comenzar
+		PORTB &= ~(1 << PB0);
+
+		// Habilitar Sleep
+		sleep_enable();
+
+		// Iniciar conversion ADC
+		ADCSRA |= (1 << ADSC);
+
+		// Dormir hasta que termine la conversion
+		sleep_cpu();
+
+		sleep_disable();
+
+		// Esperar a que se suelte el pulsador
+		while (!(PIND & (1 << PD2))) {}
+
+		// Preparar D8 para la siguiente medicion
+		PORTB &= ~(1 << PB0);
+	}
+}
