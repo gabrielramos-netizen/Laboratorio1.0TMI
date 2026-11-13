@@ -1,0 +1,46 @@
+#include <avr/io.h>
+#include <util/delay.h>
+#include <avr/interrupt.h>
+
+// 1 = 16 MHz
+// 2 = 8 MHz
+// 8 = 2 MHz
+// 64 = 250 kHz
+// 128 = 125 kHz
+
+#define DIVISOR 2
+
+#if DIVISOR == 1
+#define CLK_BITS 0
+#elif DIVISOR == 2
+#define CLK_BITS (1 << CLKPS0)
+#elif DIVISOR == 8
+#define CLK_BITS ((1 << CLKPS1) | (1 << CLKPS0))
+#elif DIVISOR == 64
+#define CLK_BITS ((1 << CLKPS2) | (1 << CLKPS1))
+#elif DIVISOR == 128
+#define CLK_BITS ((1 << CLKPS2) | (1 << CLKPS1) | (1 << CLKPS0))
+#else
+#error "Divisor incorrecto"
+#endif
+
+int main(void)
+{
+	// D8 como salida
+	DDRB |= (1 << PB0);
+	PORTB &= ~(1 << PB0);
+
+	// Configurar prescaler
+	cli();
+
+	CLKPR = (1 << CLKPCE);
+	CLKPR = CLK_BITS;
+
+	sei();
+
+	while (1)
+	{
+		PORTB ^= (1 << PB0);
+		_delay_ms(10);
+	}
+}
