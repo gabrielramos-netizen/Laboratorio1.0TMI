@@ -16,6 +16,11 @@
 // Dirección I2C del módulo PCF8574T (cambiar a 0x3F si usa PCF8574AT)
 #define LCD_DIR 0x27
 
+// Codificación numérica de la FSM
+#define EST_ACT 0   // Modo ACTIVO
+#define EST_STB 1   // Modo ESPERA
+#define EST_APA 2   // Modo APAGADO
+
 
 //=====VARIABLES GLOBALES=====
 
@@ -27,6 +32,9 @@ volatile uint8_t  f_adc   = 0;    // Bandera de lectura analógica lista
 uint8_t           v_tem   = 0;    // Temperatura leída en °C
 uint8_t           lcd_luz = 0x08; // Bit P3 del PCF8574T (0x08 = Luz ON, 0x00 = Luz OFF)
 
+uint8_t  est_act = EST_ACT;       // Estado actual de la FSM
+uint32_t t_act   = 0;             // Marca de tiempo de última actividad del usuario
+
 
 // =====INTERRUPCIONES (ISRs)=====
 
@@ -36,7 +44,7 @@ ISR(TIMER0_COMPA_vect) {
 
 ISR(INT0_vect) {
 	f_buz = 1; // Señaliza activación de buzzer
-	f_bot = 1; // Señaliza evento de usuario
+	f_bot = 1; // Señaliza evento de usuario sin alterar variables de 32 bits en la ISR
 }
 
 ISR(TIMER1_COMPA_vect) {
@@ -229,6 +237,76 @@ void lee_dht(void) {
 }
 
 
+//=====FUNCIONES DE CADA ESTADO DE LA FSM=====
+
+static uint32_t t_luz = 0;
+static uint32_t t_lcd = 0;
+static uint32_t t_tem = 0;
+
+// Estado 0: ACTIVO (Ejecuta las 5 tareas periódicas)
+void run_act(void) {
+	uint32_t t_ahora = get_ms();
+	lcd_luz = 0x08; // Retroiluminación encendida
+
+	if (t_ahora - t_luz >= 200) {
+		t_luz = t_ahora;
+		PORTB ^= (1 << PIN_LUZ);
+	}
+
+	if (t_ahora - t_lcd >= 500) {
+		t_lcd = t_ahora;
+		ver_lcd("MODO: ACTIVO    ", 1);
+	}
+
+	if (t_ahora - t_tem >= 2000) {
+		t_tem = t_ahora;
+		lee_dht();
+	}
+}
+
+// Estado 1: ESPERA (Reduce actividad y muestra «Esperando...»)
+void run_stb(void) {
+	uint32_t t_ahora = get_ms();
+	lcd_luz = 0x08;           // Mantiene retroiluminación encendida
+	PORTB &= ~(1 << PIN_LUZ); // LED apagado
+
+	if (t_ahora - t_lcd >= 500) {
+		t_lcd = t_ahora;
+		ver_lcd("Esperando...    ", 0);
+	}
+}
+
+// Estado 2: APAGADO (Detiene periféricos y mantiene luz LCD para lectura)
+void run_apa(void) {
+	uint32_t t_ahora = get_ms();
+	lcd_luz = 0x08;           // Mantiene luz de fondo encendida 
+	PORTB &= ~(1 << PIN_LUZ); // LED apagado
+
+	if (t_ahora - t_lcd >= 500) {
+		t_lcd = t_ahora;
+		ver_lcd("SISTEMA APAGADO ", 0);
+	}
+}
+
+// Tabla de punteros a función (Sin switch-case)
+typedef void (*func_est)(void);
+func_est fsm[3] = {run_act, run_stb, run_apa};
+
+// Evaluación de las condiciones temporales de transición
+void eval_fsm(uint32_t t_ahora) {
+	uint32_t inactividad = t_ahora - t_act;
+
+	// Transición de ACTIVO a ESPERA: 10 segundos sin actividad del usuario
+	if (est_act == EST_ACT && inactividad >= 10000) {
+		est_act = EST_STB;
+	}
+	// Transición a APAGADO: 30 segundos contados desde el último evento del usuario
+	else if (est_act == EST_STB && inactividad >= 30000) {
+		est_act = EST_APA;
+	}
+}
+
+
 //====PROGRAMA PRINCIPAL======
 
 int main(void) {
@@ -241,24 +319,17 @@ int main(void) {
 
 	sei(); // Habilita interrupciones globales
 
-	uint32_t t_luz  = 0;
 	uint32_t t_buz  = 0;
-	uint32_t t_lcd  = 0;
-	uint32_t t_tem  = 0;
 	uint8_t  es_buz = 0;
 
 	while (1) {
 		uint32_t t_ahora = get_ms();
 
-		// Tarea 1: LED a 200 ms
-		if (t_ahora - t_luz >= 200) {
-			t_luz = t_ahora;
-			PORTB ^= (1 << PIN_LUZ);
-		}
-
-		// Consumo de bandera de pulsador
+		// Procesamiento sincronizado de la pulsación (evita condición de carrera)
 		if (f_bot == 1) {
-			f_bot = 0;
+			f_bot   = 0;
+			t_act   = t_ahora;
+			est_act = EST_ACT;
 		}
 
 		// Manejo del Buzzer instantáneo por el botón
@@ -279,17 +350,11 @@ int main(void) {
 			f_adc = 0;
 		}
 
-		// Tarea 4: Refresco de pantalla LCD I2C a 500 ms
-		if (t_ahora - t_lcd >= 500) {
-			t_lcd = t_ahora;
-			ver_lcd("MODO: ACTIVO    ", 1);
-		}
+		// Evaluador de Inactividad y Transiciones de Estado
+		eval_fsm(t_ahora);
 
-		// Tarea 5: Lectura de temperatura a 2000 ms
-		if (t_ahora - t_tem >= 2000) {
-			t_tem = t_ahora;
-			lee_dht();
-		}
+		// Ejecución de la FSM
+		fsm[est_act]();
 	}
 
 	return 0;
