@@ -18,7 +18,7 @@
 #define SERVO3_PIN  PB3   // Carro lineal (Adelante / Atrás)
 
 #define ZONA_MUERTA         10
-#define PWM_MIN_ARRANQUE    75
+#define PWM_MIN_ARRANQUE    100 // cambio para los motores
 #define PASO_SERVO          3
 
 // --- MOTORES DC (Timer 0 Fast PWM) ---
