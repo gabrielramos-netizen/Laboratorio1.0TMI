@@ -204,7 +204,6 @@ en_failsafe = 0;
 }
 }
 
-int main(void){
 
 // Construimos y enviamos cada 200 ms la trama de telemetría hacia el teléfono celular.
 // Incluimos la distancia medida por el sensor ultrasónico, el estado actual de la FSM
@@ -281,5 +280,3 @@ telemetria_tarea();
 }
 }
     
-  while(1) 
-}
