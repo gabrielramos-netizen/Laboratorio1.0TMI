@@ -206,5 +206,80 @@ en_failsafe = 0;
 
 int main(void){
 
+// Construimos y enviamos cada 200 ms la trama de telemetría hacia el teléfono celular.
+// Incluimos la distancia medida por el sensor ultrasónico, el estado actual de la FSM
+// y un byte de banderas empaquetadas con su correspondiente checksum XOR
+void telemetria_tarea(void) {
+uint8_t dist = ultrasonido_get_cm();
+uint8_t obstaculo = (dist < DIST_FRENO_CM) ? 1 : 0;
+uint8_t flags = (obstaculo << 0) | (anticolision_on << 1) | (hubo_fs_flag << 2);
+
+uint8_t t[5];
+t[0] = TRAMA_INICIO_TX;
+t[1] = dist;
+t[2] = id_estado_telemetria;
+t[3] = flags;
+t[4] = t[1] ^ t[2] ^ t[3];
+
+for (uint8_t i = 0; i < 5; i++) {
+uart_enviar(t[i]);
+}
+hubo_fs_flag = 0;
+
+// Hacemos parpadear el LED de la placa cuando esperamos enlace o estamos en failsafe,
+// y lo mantenemos apagado durante la conducción normal para diagnóstico rápido
+if (estado_actual == st_espera_enlace || estado_actual == st_failsafe) {
+PORTB ^= (1 << LED_PIN);
+} else {
+PORTB &= ~(1 << LED_PIN);
+}
+}
+
+// Punto de entrada principal: inicializamos cada módulo de hardware por separado,
+// fijamos el estado inicial de la máquina de estados, habilitamos las interrupciones
+// globales y ejecutamos nuestro scheduler cooperativo sin utilizar retardos bloqueantes
+int main(void) {
+DDRB |= (1 << LED_PIN);
+
+motores_init();
+servo_init();
+uart_init();
+tick_init();
+ultrasonido_init();
+
+estado_actual = st_inicio;
+sei();
+
+uint32_t t10 = 0, t20 = 0, t200 = 0;
+
+while (1) {
+uint32_t ahora = millis();
+
+// Cada 10 ms procesamos los bytes recibidos, verificamos el watchdog de enlace
+// y ejecutamos la función correspondiente al estado actual del robot
+if ((ahora - t10) >= 10) {
+t10 += 10;
+parser_tarea();
+failsafe_tarea();
+estado_actual();
+}
+
+// Cada 20 ms (50 Hz, coincidiendo con el período de los servos) actualizamos un
+// paso de la rampa suave de movimiento para evitar golpes mecánicos y picos de corriente
+if ((ahora - t20) >= 20) {
+t20 += 20;
+servo_tarea();
+}
+
+// Cada 200 ms disparamos una medición del sensor ultrasónico HC-SR04P y enviamos
+// el paquete actualizado de telemetría a la aplicación móvil
+if ((ahora - t200) >= 200) {
+t200 += 200;
+ultrasonido_tarea();
+telemetria_tarea();
+}
+}
+}
+    
   while(1) 
 }
